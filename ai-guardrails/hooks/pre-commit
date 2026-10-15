@@ -1,0 +1,68 @@
+#!/bin/sh
+# pre-commit — 原生 Git 钩子（无需 pre-commit 框架的备选方案）
+#
+# 安装：
+#   cp ai-guardrails/hooks/pre-commit .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+#
+# ⚠️ Windows 注意：
+#   Windows 下 .git/hooks/ 里的 shell 脚本需要 Git Bash 才能执行。
+#   如果你用 PowerShell / CMD，建议改用 pre-commit 框架：
+#       pip install pre-commit && pre-commit install
+#
+# 跳过检查（紧急情况）：
+#   git commit --no-verify
+
+set -e
+
+echo "🔍 运行提交前检查..."
+
+# ---- 1. 阻止提交 .env ----
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+
+for f in $STAGED; do
+    base=$(basename "$f")
+    case "$base" in
+        .env|.env.local|.env.prod|.env.production|agent.yml)
+            echo "❌ 禁止提交 $f（可能含密钥）"
+            echo "   如果这是模板文件，请命名为 .env.example"
+            exit 1
+            ;;
+    esac
+done
+
+# ---- 2. 编码检查（防乱码）----
+if [ -f "scripts/check_encoding.py" ]; then
+    if ! python scripts/check_encoding.py . ; then
+        echo ""
+        echo "❌ 编码检查未通过，提交已阻止。"
+        echo "   修复建议："
+        echo "     - 用编辑器「以 GBK 打开 → 另存为 UTF-8」"
+        echo "     - 或运行：python scripts/check_encoding.py . --fix"
+        exit 1
+    fi
+else
+    echo "⚠️  未找到 scripts/check_encoding.py，跳过编码检查"
+fi
+
+# ---- 3. 文件体积突变检查（防覆盖）----
+if [ -f "scripts/check_encoding.py" ]; then
+    if ! python scripts/check_encoding.py . --check-shrink ; then
+        echo ""
+        echo "❌ 检测到文件异常缩小，疑似被整文件重写覆盖。"
+        echo "   请用 git diff 确认后再提交。"
+        echo "   确认无误可跳过：git commit --no-verify"
+        exit 1
+    fi
+fi
+
+# ---- 4. 阻断合并冲突标记 ----
+for f in $STAGED; do
+    if [ -f "$f" ] && grep -qE '^(<<<<<<<|>>>>>>>|=======)$' "$f" 2>/dev/null; then
+        echo "❌ $f 含未解决的合并冲突标记"
+        exit 1
+    fi
+done
+
+echo "✅ 提交前检查通过"
+exit 0

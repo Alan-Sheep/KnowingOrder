@@ -1,0 +1,40 @@
+; .editorconfig — 统一所有编辑器的编码与格式
+; VS Code / PyCharm / IDEA / Sublime / Vim 都自动识别
+; 作用：让所有编辑器默认以 UTF-8 (无 BOM) + LF 保存文件，从源头防乱码
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{py,pyi}]
+indent_size = 4
+max_line_length = 100
+
+[*.{js,jsx,ts,tsx,json,yml,yaml,html,css,scss,less}]
+indent_size = 2
+
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+[*.{txt,log}]
+indent_size = 2
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
+
+[*.{bat,cmd}]
+end_of_line = crlf
+
+[*.ps1]
+end_of_line = crlf
+indent_size = 4
+
+[*.{sh,bash}]
+indent_size = 2

@@ -1,0 +1,77 @@
+# .pre-commit-config.yaml — 提交前自动检查
+# 作用：即使 AI 忽略了规则，这些检查也会在 git commit 时强制拦截
+#
+# 安装：
+#   pip install pre-commit
+#   cp ai-guardrails/.pre-commit-config.yaml .
+#   pre-commit install
+#
+# 手动全量运行：
+#   pre-commit run --all-files
+
+repos:
+  # ============ 基础卫生检查 ============
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # 修复文件末尾换行
+      - id: end-of-file-fixer
+      # 清理行尾空白
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      # 确保文件是合法 UTF-8（★ 防乱码核心）
+      - id: check-utf8
+      # 阻止把大文件提交进去
+      - id: check-added-large-files
+        args: ['--maxkb=2048']
+      # 阻止提交私钥
+      - id: detect-private-key
+      # 检查 YAML / JSON / TOML 语法
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      # 阻止合并冲突标记被提交
+      - id: check-merge-conflict
+      # 阻止直接提交到主分支
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, master]
+      # 检测意外添加的可执行文件 / 符号链接
+      - id: check-executables-have-shebangs
+      # 混合换行符检测（★ 防 diff 污染）
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # ============ 本项目自定义检查 ============
+  - repo: local
+    hooks:
+      # 乱码 + BOM + NUL + 换行 全面检查
+      - id: check-encoding-custom
+        name: 编码完整性检查（防乱码）
+        entry: python scripts/check_encoding.py
+        language: system
+        types: [text]
+        pass_filenames: false
+        args: ['.']
+
+      # 文件体积突变检查（防覆盖）
+      - id: check-file-shrink
+        name: 文件体积突变检查（防覆盖）
+        entry: python scripts/check_encoding.py
+        language: system
+        pass_filenames: false
+        args: ['.', '--check-shrink']
+
+      # 阻止提交 .env
+      - id: forbid-env-file
+        name: 阻止提交 .env（含密钥）
+        entry: bash -c 'for f in "$@"; do case "$(basename "$f")" in .env|.env.*) if [ "$(basename "$f")" != ".env.example" ]; then echo "❌ 禁止提交 $f（含密钥）"; exit 1; fi;; esac; done' --
+        language: system
+        pass_filenames: true
+
+      # Python 语法检查（快速失败）
+      - id: python-syntax-check
+        name: Python 语法检查
+        entry: python -m py_compile
+        language: system
+        types: [python]
+        pass_filenames: true

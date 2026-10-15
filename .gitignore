@@ -1,0 +1,92 @@
+# .gitignore — 忽略清单
+# ⚠️ 第一条就是密钥，绝对不能进 Git
+
+# ===== 密钥（最高优先级）=====
+.env
+.env.*
+!.env.example
+config/agent.yml
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials.json
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ===== 运行时数据 =====
+data/
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+chroma/
+qdrant_storage/
+
+# ===== 编辑器 / IDE =====
+.idea/
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ===== 操作系统 =====
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ===== AI / 工具产生的临时文件 =====
+# 这些是"内容被覆盖"的痕迹，不要进 Git
+*.tmp
+*.bak
+*.backup
+*.orig
+*.rej
+*.old
+*.save
+*~
+*.copy
+*.duplicate
+.cursor/
+.aider*
+.continuerc.json
+
+# ===== 构建产物 =====
+node_modules/
+dist/
+build/
+*.min.js.map
+
+# ===== 测试与评估的临时输出 =====
+eval/results/*.json
+!eval/results/.gitkeep
