@@ -1,0 +1,16 @@
+# 开发环境：本地 MySQL，账号密码优先读环境变量，冒号后为本地默认值（禁止在此写真实密码）
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:rag_qa}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+
+mybatis-plus:
+  configuration:
+    # 开发环境打印 SQL，便于排查
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+logging:
+  level:
+    root: INFO
+    com.ragqa: DEBUG

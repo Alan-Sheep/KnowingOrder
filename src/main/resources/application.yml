@@ -1,0 +1,49 @@
+# 公共配置：所有环境共享。环境差异项放到 application-{profile}.yml
+server:
+  port: 8080
+  servlet:
+    context-path: /
+    encoding:
+      charset: UTF-8
+      force: true
+
+spring:
+  application:
+    name: rag-qa
+  profiles:
+    # 默认 dev；生产启动时用 --spring.profiles.active=prod 或环境变量 SPRING_PROFILES_ACTIVE=prod 覆盖
+    active: dev
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: RagQaHikariCP
+      minimum-idle: 2
+      maximum-pool-size: 10
+      # 获取连接最长等待 30s，超时抛异常而不是无限阻塞
+      connection-timeout: 30000
+      # 空闲连接 10 分钟回收；连接最长存活 30 分钟（需小于 MySQL wait_timeout，默认 8 小时）
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+mybatis-plus:
+  # XML 映射文件位置（目前只用 BaseMapper，目录为后续自定义 SQL 预留）
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.ragqa.domain.entity
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+logging:
+  charset:
+    console: UTF-8
+    file: UTF-8
+  pattern:
+    # 时间 | 级别 | 进程 | 线程 | 类名 | 消息
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:- } --- [%15.15t] %-40.40logger{39} : %m%n%wEx"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:- } --- [%t] %-40.40logger{39} : %m%n%wEx"

@@ -86,6 +86,7 @@ node_modules/
 dist/
 build/
 *.min.js.map
+target/
 
 # ===== 测试与评估的临时输出 =====
 eval/results/*.json

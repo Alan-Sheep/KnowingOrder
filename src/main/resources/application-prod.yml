@@ -1,0 +1,22 @@
+# 生产环境：数据源全部取环境变量且不设默认值，缺失时启动即失败，避免误连
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+
+logging:
+  level:
+    root: INFO
+    com.ragqa: INFO
+  file:
+    # logs/ 已在 .gitignore 中忽略
+    name: logs/rag-qa.log
+  logback:
+    rollingpolicy:
+      # 单文件 100MB 滚动，保留 30 天，总量上限 3GB
+      max-file-size: 100MB
+      max-history: 30
+      total-size-cap: 3GB
