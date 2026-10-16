@@ -27,7 +27,8 @@ import java.util.stream.Collectors;
  * <p>HTTP 状态码策略：业务异常返回 200（由 body 中 code 区分）；
  * 框架层错误返回与语义一致的 4xx/5xx，便于网关、监控按状态码统计。</p>
  *
- * <p>日志策略：4xx 与业务异常记 WARN 不打堆栈；未知异常记 ERROR 带堆栈，且不把异常信息回传给前端。</p>
+ * <p>日志策略：业务异常只在本类记录一次，WARN 级别并带错误码与堆栈（LogAspect 对业务异常不再重复记录）；
+ * 其余 4xx 记 WARN 不打堆栈；未知异常记 ERROR 带堆栈，且不把异常信息回传给前端。</p>
  */
 @Slf4j
 @RestControllerAdvice
@@ -37,7 +38,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     @ResponseStatus(HttpStatus.OK)
     public Result<Void> handleBusiness(BusinessException e) {
-        log.warn("业务异常: code={}, message={}", e.getCode(), e.getMessage());
+        // 末尾传入异常对象，SLF4J 会把它当作堆栈输出而不是占位符参数
+        log.warn("业务异常: code={}, message={}", e.getCode(), e.getMessage(), e);
         return Result.fail(e.getCode(), e.getMessage());
     }
 

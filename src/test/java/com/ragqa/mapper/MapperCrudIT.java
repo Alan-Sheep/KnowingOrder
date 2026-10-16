@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ragqa.common.Constants;
 import com.ragqa.domain.entity.RagChunk;
+import com.ragqa.domain.entity.RagConversation;
+import com.ragqa.domain.entity.RagDocument;
+import com.ragqa.domain.entity.RagMessage;
 import com.ragqa.domain.entity.SysUser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,11 +39,24 @@ class MapperCrudIT {
     /** 故意使用不存在的文档ID，用于验证未建物理外键 */
     private static final long ORPHAN_DOCUMENT_ID = 999999999L;
 
+    /** 冒烟用例里引用的用户 / 会话 ID：不存在对应主记录，同样依赖未建物理外键 */
+    private static final long ORPHAN_USER_ID = 999999998L;
+    private static final long ORPHAN_CONVERSATION_ID = 999999997L;
+
     @Autowired
     private SysUserMapper sysUserMapper;
 
     @Autowired
     private RagChunkMapper ragChunkMapper;
+
+    @Autowired
+    private RagDocumentMapper ragDocumentMapper;
+
+    @Autowired
+    private RagConversationMapper ragConversationMapper;
+
+    @Autowired
+    private RagMessageMapper ragMessageMapper;
 
     /** 绕过 MyBatis-Plus 直读物理行，用于验证逻辑删除与时间列的数据库默认值 */
     @Autowired
@@ -129,6 +145,76 @@ class MapperCrudIT {
         Long remaining = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM rag_chunk WHERE id = ?", Long.class, chunk.getId());
         assertThat(remaining).as("无 deleted 列，删除即物理删除").isZero();
+    }
+
+    /*
+     * 以下 3 个是最轻的冒烟：只验证「插入 + 按主键查回」，用来兜住 @TableName 表名写错、
+     * 字段映射缺失这类问题。表名写错会在 insert 时直接抛 SQL 异常；
+     * 驼峰字段映射漏掉则会在查回后断言失败。
+     */
+
+    @Test
+    @DisplayName("冒烟 rag_document：插入后按ID查回，字段映射与默认值正确")
+    void documentInsertThenSelect() {
+        RagDocument doc = new RagDocument();
+        doc.setTitle("冒烟文档");
+        doc.setSourceType(Constants.SourceType.UPLOAD);
+        doc.setFilePath("/data/it_verify.pdf");
+        doc.setFileSize(1024L);
+        doc.setCreatedBy(ORPHAN_USER_ID);
+
+        assertThat(ragDocumentMapper.insert(doc)).isEqualTo(1);
+        assertThat(doc.getId()).isNotNull();
+
+        RagDocument loaded = ragDocumentMapper.selectById(doc.getId());
+        assertThat(loaded).isNotNull();
+        assertThat(loaded.getTitle()).isEqualTo("冒烟文档");
+        assertThat(loaded.getSourceType()).as("source_type 映射").isEqualTo(Constants.SourceType.UPLOAD);
+        assertThat(loaded.getFilePath()).as("file_path 映射").isEqualTo("/data/it_verify.pdf");
+        assertThat(loaded.getFileSize()).as("file_size 映射").isEqualTo(1024L);
+        assertThat(loaded.getCreatedBy()).as("created_by 映射").isEqualTo(ORPHAN_USER_ID);
+        assertThat(loaded.getStatus()).as("status 取数据库默认值").isEqualTo(Constants.DocumentStatus.PENDING);
+        assertThat(loaded.getChunkCount()).as("chunk_count 取数据库默认值").isZero();
+        assertThat(loaded.getDeleted()).isEqualTo(Constants.Deleted.NO);
+    }
+
+    @Test
+    @DisplayName("冒烟 rag_conversation：插入后按ID查回，字段映射正确")
+    void conversationInsertThenSelect() {
+        RagConversation conversation = new RagConversation();
+        conversation.setUserId(ORPHAN_USER_ID);
+        conversation.setTitle("冒烟会话");
+
+        assertThat(ragConversationMapper.insert(conversation)).isEqualTo(1);
+        assertThat(conversation.getId()).isNotNull();
+
+        RagConversation loaded = ragConversationMapper.selectById(conversation.getId());
+        assertThat(loaded).isNotNull();
+        assertThat(loaded.getUserId()).as("user_id 映射").isEqualTo(ORPHAN_USER_ID);
+        assertThat(loaded.getTitle()).isEqualTo("冒烟会话");
+        assertThat(loaded.getDeleted()).isEqualTo(Constants.Deleted.NO);
+        assertThat(loaded.getCreatedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("冒烟 rag_message：插入后按ID查回，字段映射正确")
+    void messageInsertThenSelect() {
+        RagMessage message = new RagMessage();
+        message.setConversationId(ORPHAN_CONVERSATION_ID);
+        message.setRole(Constants.MessageRole.USER);
+        message.setContent("中文提问：什么是 RAG？");
+        message.setTokenCount(8);
+
+        assertThat(ragMessageMapper.insert(message)).isEqualTo(1);
+        assertThat(message.getId()).isNotNull();
+
+        RagMessage loaded = ragMessageMapper.selectById(message.getId());
+        assertThat(loaded).isNotNull();
+        assertThat(loaded.getConversationId()).as("conversation_id 映射").isEqualTo(ORPHAN_CONVERSATION_ID);
+        assertThat(loaded.getRole()).isEqualTo(Constants.MessageRole.USER);
+        assertThat(loaded.getContent()).isEqualTo("中文提问：什么是 RAG？");
+        assertThat(loaded.getTokenCount()).as("token_count 映射").isEqualTo(8);
+        assertThat(loaded.getCreatedAt()).isNotNull();
     }
 
     private SysUser newUser(String tag) {

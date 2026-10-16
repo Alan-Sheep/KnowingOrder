@@ -1,5 +1,6 @@
 package com.ragqa.common.aspect;
 
+import com.ragqa.exception.BusinessException;
 import com.ragqa.utils.JsonUtils;
 import com.ragqa.utils.StrUtils;
 import jakarta.servlet.ServletRequest;
@@ -17,10 +18,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Controller 请求日志切面：统一记录方法、入参、返回值、耗时与异常。
+ * Controller 请求日志切面：统一记录方法、入参、返回值、耗时与意外异常。
  *
- * <p>切所有 {@code @RestController} 下的方法。异常记录后原样抛出，
- * 继续交给 {@link com.ragqa.exception.GlobalExceptionHandler} 处理，切面只观察不干预。</p>
+ * <p>切所有 {@code @RestController} 下的方法。异常一律原样抛出，
+ * 继续交给 {@link com.ragqa.exception.GlobalExceptionHandler} 处理，切面只观察不干预。
+ * 其中业务异常（{@link BusinessException}）已由处理器记录，切面不重复记录；
+ * 只有未预期的异常才在此补一行带耗时与入参的 WARN。</p>
+ *
+ * <p>当前切点只覆盖 {@code @RestController}；若以后出现 {@code @Controller + @ResponseBody}
+ * 写法，需把切点改为 {@code @within(org.springframework.stereotype.Controller)}。</p>
  *
  * <p>入参序列化复用 {@link JsonUtils}（即容器里的 ObjectMapper），因此
  * {@code @JsonIgnore} 标记的敏感字段不会进入日志。</p>
@@ -48,9 +54,12 @@ public class LogAspect {
             long costMillis = (System.nanoTime() - start) / 1_000_000;
             log.info("[{}] 完成 耗时={}ms 入参={} 返回={}", method, costMillis, args, describe(result));
             return result;
+        } catch (BusinessException e) {
+            // 业务异常由 GlobalExceptionHandler 统一记录（含错误码与堆栈），这里放行不重复记录
+            throw e;
         } catch (Throwable e) {
             long costMillis = (System.nanoTime() - start) / 1_000_000;
-            // 只记异常类型与消息，堆栈由 GlobalExceptionHandler 记录，避免同一异常打两遍堆栈
+            // 意外异常：只记类型与消息（附耗时和入参便于定位），堆栈由 GlobalExceptionHandler 记录
             log.warn("[{}] 异常 耗时={}ms 入参={} 异常={}: {}", method, costMillis, args,
                     e.getClass().getSimpleName(), e.getMessage());
             throw e;

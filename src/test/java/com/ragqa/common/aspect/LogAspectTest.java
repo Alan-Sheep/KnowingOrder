@@ -87,19 +87,29 @@ class LogAspectTest {
     }
 
     @Test
-    @DisplayName("业务异常：记录一行 warn 后原样抛出，仍由全局异常处理器转成统一响应")
-    void logsExceptionAndRethrows() throws Exception {
+    @DisplayName("业务异常：切面不重复记录，异常原样抛出，由全局异常处理器转成统一响应")
+    void businessExceptionIsNotLoggedByAspect() throws Exception {
         mockMvc.perform(get("/test/aspect/biz"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(1000))
                 .andExpect(jsonPath("$.message").value("文档不存在"));
 
+        // 响应仍是业务体，说明异常没有被切面吞掉；切面日志里则不应出现任何记录
+        assertThat(appender.list).as("切面对业务异常不输出任何日志").isEmpty();
+    }
+
+    @Test
+    @DisplayName("意外异常：切面补一行 warn（含耗时与入参），异常仍原样抛出")
+    void unexpectedExceptionIsLoggedByAspect() throws Exception {
+        mockMvc.perform(get("/test/aspect/boom"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value(500));
+
         String logs = collectLogs();
-        assertThat(logs).contains("TestController#biz");
+        assertThat(logs).contains("TestController#boom");
         assertThat(logs).contains("异常");
-        assertThat(logs).contains("BusinessException");
-        // 异常未被吞掉，请求照常返回业务体
-        assertThat(logs).contains("文档不存在");
+        assertThat(logs).contains("IllegalStateException");
+        assertThat(logs).contains("耗时=");
     }
 
     /** 汇总本次用例捕获到的全部日志文本 */
@@ -127,6 +137,11 @@ class LogAspectTest {
         @GetMapping("/test/aspect/biz")
         public Result<Void> biz() {
             throw new BusinessException("文档不存在");
+        }
+
+        @GetMapping("/test/aspect/boom")
+        public Result<Void> boom() {
+            throw new IllegalStateException("意外故障");
         }
     }
 }

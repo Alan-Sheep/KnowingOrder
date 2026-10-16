@@ -6,7 +6,8 @@ import lombok.Getter;
 /**
  * 业务异常。service 层遇到可预期的业务失败时抛出，由全局异常处理器转换为统一响应。
  *
- * <p>属于"预期内"错误：只记 WARN 日志，不打印堆栈。</p>
+ * <p>属于"预期内"错误：仅由 GlobalExceptionHandler 记一次 WARN（含错误码与堆栈），
+ * 其余位置（如 LogAspect）不要重复记录。</p>
  */
 @Getter
 public class BusinessException extends RuntimeException {

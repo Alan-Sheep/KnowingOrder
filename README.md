@@ -43,7 +43,38 @@ DB_PASSWORD=你的密码 ./mvnw spring-boot:run
 
 可覆盖的变量（见 `application-dev.yml`）：`DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USERNAME`、`DB_PASSWORD`。
 
-生产环境（`prod`）的数据源**没有默认值**，必须提供 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD`，缺失时启动直接失败，避免误连本地库。
+生产环境（`prod`）的数据源**没有默认值**，缺失时启动直接失败，避免误连本地库。变量清单见下一节。
+
+### 生产环境（prod）配置清单
+
+激活方式：`SPRING_PROFILES_ACTIVE=prod`，或启动参数 `--spring.profiles.active=prod`。
+变量来源：`application-prod.yml`。
+
+| 变量 | 必填 | 说明 | 示例 |
+|---|---|---|---|
+| `DB_URL` | 是 | 完整 JDBC 连接串，**不拼接**，需自行带上库名与参数 | `jdbc:mysql://10.0.0.5:3306/rag_qa?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=true` |
+| `DB_USERNAME` | 是 | 数据库账号，建议使用仅授予 `rag_qa` 库权限的专用账号，不要用 root | `rag_qa_app` |
+| `DB_PASSWORD` | 是 | 数据库密码，通过环境变量或密钥管理注入，**不要写进配置文件或提交到 Git** | - |
+| `CORS_ALLOWED_ORIGINS` | 否 | 允许跨域的前端来源，多个用英文逗号分隔；**留空则不开放任何跨域** | `https://qa.example.com,https://admin.example.com` |
+
+注意事项：
+
+- 三个必填变量中任意一个缺失，应用会在启动时因占位符无法解析而直接失败，这是有意为之。
+- `DB_URL` 与 dev 环境不同：dev 用 `DB_HOST` / `DB_PORT` / `DB_NAME` 拼接，prod 只认 `DB_URL`，**设置 `DB_HOST` 等变量在 prod 下不生效**。
+- `CORS_ALLOWED_ORIGINS` 必须写成一行逗号分隔，不能写成多行列表；来源要写完整（含协议与端口），如 `https://qa.example.com`。
+- 日志写入工作目录下的 `logs/rag-qa.log`，单文件 100MB 滚动、保留 30 天、总量上限 3GB，需确保运行账号对该目录有写权限。
+- 单项配置（连接池大小等）在 `application-prod.yml` 中，目前连接池最大连接数为 20。
+
+示例：
+
+```bash
+export SPRING_PROFILES_ACTIVE=prod
+export DB_URL='jdbc:mysql://10.0.0.5:3306/rag_qa?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=true'
+export DB_USERNAME='rag_qa_app'
+export DB_PASSWORD='从密钥管理系统获取'
+export CORS_ALLOWED_ORIGINS='https://qa.example.com'
+java -jar target/rag-qa-0.0.1-SNAPSHOT.jar
+```
 
 ### 3. 启动
 
