@@ -34,4 +34,32 @@ public final class StrUtils {
         }
         return str.substring(0, maxLen) + "...";
     }
+
+    /**
+     * 驼峰转下划线，如 {@code createdAt -> created_at}、{@code ID -> id}。
+     *
+     * <p>用于把接口传的驼峰字段名映射成数据库列名。转过之后的字符串仍然只由
+     * 字母、数字、下划线组成，可安全用于 ORDER BY。</p>
+     *
+     * @param str 原字符串，为 null 或空白时原样返回
+     */
+    public static String camelToSnake(String str) {
+        if (isBlank(str)) {
+            return str;
+        }
+        StringBuilder result = new StringBuilder(str.length() + 4);
+        for (int i = 0; i < str.length(); i++) {
+            char c = str.charAt(i);
+            if (Character.isUpperCase(c)) {
+                // 连续大写（如 ID）视为一个词，只在「小写/数字 后面跟大写」时插下划线
+                if (i > 0 && !Character.isUpperCase(str.charAt(i - 1))) {
+                    result.append('_');
+                }
+                result.append(Character.toLowerCase(c));
+            } else {
+                result.append(c);
+            }
+        }
+        return result.toString();
+    }
 }

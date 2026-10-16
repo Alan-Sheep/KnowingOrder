@@ -10,6 +10,11 @@ mybatis-plus:
     # 开发环境打印 SQL，便于排查
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
+# 允许来源必须写成一行逗号分隔（不能写 YAML 列表，数组绑定不认多行写法）
+# 留空则完全不注册跨域规则：同源请求不受影响，跨域请求返回 403
+cors:
+  allowed-origins: http://localhost:5173,http://localhost:3000
+
 logging:
   level:
     root: INFO
