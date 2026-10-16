@@ -1,5 +1,16 @@
 # CLAUDE.md — Claude Code 专用规则
 
+## 当前项目适用说明（2026-10-17）
+
+- 产品为 **知序——企业知识问答与事务协同平台**，定位企业知识与工作助手；企业知识库与业务问答优先，员工事务及补贴是辅助。
+- 当前范围以 [需求分析](02-需求分析.md)、[架构设计](03-架构设计.md) 的当前有效部分为准；单元顺序采用 [08当前路线](08-步进式开发协作提示词.md) 的A—H阶段。
+- 实际工程为 `backend/src/main/java/com/ragqa/`、`backend/src/main/resources/prompts/`、`frontend/`；`redis/`仅占位。保留Java17、Spring Boot及现有分层，不照历史Python示例初始化或覆盖工程。
+- 下一单元为企业成员与资源授权契约盘点；认证、企业入库检索及财务流程尚未完成验收。原访客路线冻结保留，不删除既有实现。
+- 用户另已授权先行实现独立dev Mock商品查询及演示首页跳转；真实渠道和Agent工具接入仍未实现，验证及全量旧HTTP失败见当前开发待办与产品定版交接。不能因此改变企业知识主线优先级。
+- 外部平台只查询和跳转，员工自行下单支付；无OCR；不把点击/支付当履约完成或补贴凭据。通讯录可见不等于私有资料公开。
+- 密钥经运行环境注入，不读写 `.env`；未批准不得向现有模型中转发送企业私有资料。
+- 下方通用安全操作规则继续适用。PowerShell5.1的 `Set-Content -Encoding UTF8` 会带BOM，旧示例不能用于本工程写文件；优先精确补丁，保持UTF-8无BOM及LF。`PYTHONUTF8` 只影响Python，不会改变Java代码。
+
 > 本文件是 `AGENTS.md` 的**精简执行版**，针对 Claude Code 的工作方式优化。
 > **完整规则见 `AGENTS.md`，冲突时以 `AGENTS.md` 的优先级裁决为准。**
 >
@@ -142,8 +153,9 @@ json.dumps(data, ensure_ascii=False)      # 中文不转义
 # ❌ PowerShell 5.1 会写成 UTF-16LE
 Get-Content a.md > b.md
 
-# ✅
-Get-Content a.md -Encoding UTF8 | Set-Content b.md -Encoding UTF8
+# ✅ 读取显式UTF-8；写入用精确补丁，保持无BOM与LF
+Get-Content -LiteralPath 'a.md' -Encoding UTF8
+# PowerShell5.1的 Set-Content -Encoding UTF8 会引入BOM，不用于写本工程文件。
 ```
 
 换行用 **LF**，不要 CRLF，不要 BOM。

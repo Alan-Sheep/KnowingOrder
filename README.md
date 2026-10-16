@@ -1,177 +1,114 @@
-# RAG 智能问答系统 · 后端
+# 知序 · 企业知识与工作助手
 
-基于 Spring Boot 的后端服务。当前**只有非业务的基础骨架与通用设施**，RAG 业务逻辑（文档切分、向量检索、大模型调用）尚未实现。
+> 读懂公司知识，帮你把工作做好。
 
-## 技术栈
+产品名称：**知序**；英文标识沿用 **KnowingOrder**；简历项目名：**知序——企业知识问答与事务协同平台**。
 
-| 组件 | 版本 | 说明 |
+## 产品定位与业务边界（2026-10-17）
+
+| 业务 | 优先级 | 核心目标 |
 |---|---|---|
-| Spring Boot | 3.3.5 | |
-| Java | 17 | 字节码目标 17，可用 JDK 21 构建 |
-| Maven | 3.9.9 | 由 Maven Wrapper 提供，无需预装 |
-| MyBatis-Plus | 3.5.7 | 单表 CRUD、分页插件、逻辑删除 |
-| MySQL | 8.0 | 库名 `rag_qa`，字符集 `utf8mb4` |
+| 企业知识库与业务问答 | 主业务，优先建设与验收 | 基于获授权的公司制度、产品资料、业务手册和项目经验，帮助员工理解知识、业务及工作方法，回答可追溯 |
+| 员工事务办理与补贴结算 | 辅助业务，分阶段接入 | 协助选购、跳转平台下单、收集参与确认及原始凭证，连接行政与财务核对、月结及退款调整 |
 
-依赖只有 Web、Validation、AOP、MyBatis-Plus、MySQL 驱动、Lombok。**未引入**向量数据库、大模型 SDK、Actuator、接口文档等组件。
+- 企业内部知识优先检索企业知识库；公开联网搜索作为受控补充，不拿公开网页替代企业制度，不向搜索服务发送内部资料。
+- 当前选购方案为“查询推荐 → 返回跳转链接 → 员工在外部平台自行下单支付”。渠道权限及订单归因尚待真实验证，不宣称后端已经代下单或取得实时交易回调。
+- 不接入任何 OCR 服务，也不使用多模态模型替代票据识别。保留原始票据及电子原文件；结构化字段从获授权渠道取得，无法取得时由员工填报、财务核对。
+- 跳转、点击或付款不代表履约完成。订单、退款信息未经可信核验时，不自动认定补贴资格，不自动进入已确认财务结算。
+- 企业知识、会话、票据及财务数据按企业、成员与角色权限隔离；通讯录可选同事，不表示同事的私有数据公开。原访客方案冻结，访客不得访问企业私有资料。
 
-## 环境要求
+当前需求与目标架构以 [需求分析](02-需求分析.md) 和 [架构设计](03-架构设计.md) 的“当前有效”部分为准，配套指南已同步知序定位。各文档的折叠历史区仅供追溯，旧技术路线、价格、采购清单及完成状态不得直接当作当前结论。
 
-- JDK 17 或更高（`JAVA_HOME` 需指向 JDK 安装目录，不是 JRE）
-- MySQL 8.0，已启动
-- 不需要单独安装 Maven
+## 实施状态与文档导航
 
-## 快速开始
+已有工程包含 Spring Boot 后端、Vue 问答界面、联网问答调用链及部分会话归属能力；存在代码不等于企业产品已验收。当前 `/api/chat` 为 dev 环境入口，不能直接作为带完整认证的生产接口发布。
 
-### 1. 建库建表
+已实现企业账号与资源授权、知识空间治理、私有TXT/Markdown上传、版本/有效期/负责人、发布撤回、解析切分与片段入库；现已接通Vue企业授权关键词检索与引用回答。默认只展示本地原文，模型仅供获准专用空间的合成资料验收，真实企业原文外发未批准。2026-10-18后端全量1018项、前端最终39项、企业与原拦截页面各18项及构建通过；真实MySQL＋现有中转模型页面15/15，三问中30元、主管审批有引用，到账时间资料不足，测试版本最终撤回。详细文件、四方面学习、失败与复验见[企业问答闭环记录](docs/企业授权检索与回答最小闭环记录-2026-10-18.md)。先前迁移、用户IDEA入库IT整类退出码0及文档页面13项见[入库历史记录](docs/知识管理与文字入库闭环实施记录-2026-10-18.md)，不与新结果累加。下一步合成企业黄金集，再评审全文/向量/混合召回；持久任务和会话、生产容量/完整权限实库矩阵、真实渠道及财务仍待开发或验收，Mock商品仅演示。
 
-`schema.sql` 在**仓库根目录**，应用启动时不会自动建表，需要手动执行一次：
+| 文档 | 用途与同步状态 |
+|---|---|
+| [02 · 需求分析](02-需求分析.md) | 当前有效：产品范围、角色、用户流程、验收边界与待决策项 |
+| [03 · 架构设计](03-架构设计.md) | 当前有效：沿用 Java 分层的目标模块、数据流、隔离与可靠性设计 |
+| [04 · 实施指南](04-实施指南.md)、[08 · 步进协作](08-步进式开发协作提示词.md) | 已同步：A—H知识库优先路线、最小单元与验证门槛；独立Mock单元可先行 |
+| [05 · 预算分析](05-预算分析.md) | 已同步：知识库为主、事务辅助、无OCR；区间为规划占位，未重新核价 |
+| [06 · 企业级 RAG 与 Prompt 规范](06-企业级RAG与Prompt规范.md) | 已同步：企业权限、版本、证据质量、执行约束与评估规范 |
+| [开发待办](docs/开发待办.md)、[前端说明](frontend/README.md)、[后端说明](backend/README.md) | 已同步新路线、页面与接口边界；历史验证证据保留 |
+| [AGENTS.md](AGENTS.md)、[07 · 协作安全规范](07-AI协作安全规范.md) | 继续执行协作与内容保护规则，不因业务调整放宽安全限制 |
+| [01 · 参考项目分析](01-项目分析-PhysicsAgent解读.md) | 历史设计参考，不定义知序技术栈、价格或能力 |
+| [产品定版交接](docs/开发上下文交接-知序产品定版-2026-10-17.md) | 本次决策、实际变更、测试与未完成项；恢复上下文时优先阅读 |
 
-```bash
-mysql -uroot -p < schema.sql
-```
+以下启动命令与目录说明沿用现有工程；验证记录均是对应日期、对应范围的历史证据。
 
-脚本里含 `CREATE DATABASE IF NOT EXISTS rag_qa` 与 `USE rag_qa`，不必先手动建库。
-注意 `CREATE TABLE` 未加 `IF NOT EXISTS`，重复执行会在已存在的表上报错，属正常现象。
-
-### 2. 配置数据库连接
-
-开发环境默认连 `localhost:3306/rag_qa`，账号 `root`。密码通过环境变量传入：
-
-```bash
-DB_PASSWORD=你的密码 ./mvnw spring-boot:run
-```
-
-可覆盖的变量（见 `application-dev.yml`）：`DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USERNAME`、`DB_PASSWORD`。
-
-生产环境（`prod`）的数据源**没有默认值**，缺失时启动直接失败，避免误连本地库。变量清单见下一节。
-
-### 生产环境（prod）配置清单
-
-激活方式：`SPRING_PROFILES_ACTIVE=prod`，或启动参数 `--spring.profiles.active=prod`。
-变量来源：`application-prod.yml`。
-
-| 变量 | 必填 | 说明 | 示例 |
-|---|---|---|---|
-| `DB_URL` | 是 | 完整 JDBC 连接串，**不拼接**，需自行带上库名与参数 | `jdbc:mysql://10.0.0.5:3306/rag_qa?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=true` |
-| `DB_USERNAME` | 是 | 数据库账号，建议使用仅授予 `rag_qa` 库权限的专用账号，不要用 root | `rag_qa_app` |
-| `DB_PASSWORD` | 是 | 数据库密码，通过环境变量或密钥管理注入，**不要写进配置文件或提交到 Git** | - |
-| `CORS_ALLOWED_ORIGINS` | 否 | 允许跨域的前端来源，多个用英文逗号分隔；**留空则不开放任何跨域** | `https://qa.example.com,https://admin.example.com` |
-
-注意事项：
-
-- 三个必填变量中任意一个缺失，应用会在启动时因占位符无法解析而直接失败，这是有意为之。
-- `DB_URL` 与 dev 环境不同：dev 用 `DB_HOST` / `DB_PORT` / `DB_NAME` 拼接，prod 只认 `DB_URL`，**设置 `DB_HOST` 等变量在 prod 下不生效**。
-- `CORS_ALLOWED_ORIGINS` 必须写成一行逗号分隔，不能写成多行列表；来源要写完整（含协议与端口），如 `https://qa.example.com`。
-- 日志写入工作目录下的 `logs/rag-qa.log`，单文件 100MB 滚动、保留 30 天、总量上限 3GB，需确保运行账号对该目录有写权限。
-- 单项配置（连接池大小等）在 `application-prod.yml` 中，目前连接池最大连接数为 20。
-
-示例：
-
-```bash
-export SPRING_PROFILES_ACTIVE=prod
-export DB_URL='jdbc:mysql://10.0.0.5:3306/rag_qa?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=true'
-export DB_USERNAME='rag_qa_app'
-export DB_PASSWORD='从密钥管理系统获取'
-export CORS_ALLOWED_ORIGINS='https://qa.example.com'
-java -jar target/rag-qa-0.0.1-SNAPSHOT.jar
-```
-
-### 3. 启动
-
-```bash
-./mvnw spring-boot:run
-```
-
-Windows cmd / PowerShell 用 `mvnw.cmd` 代替 `./mvnw`。默认端口 **8080**。
-
-### 4. 验证
-
-```bash
-curl http://localhost:8080/api/health
-```
-
-预期：
-
-```json
-{"code":0,"message":"成功","data":"UP","timestamp":1700000000000}
-```
+`AnsweringSystem/` 是整个系统的仓库根目录，后端、前端及 Redis 配置分别放置，统一使用根目录的 Git 与协作规范。
 
 ## 目录结构
 
-```
-src/main/java/com/ragqa/
-├── RagQaApplication.java      启动类
-├── common/                    跨层共享：Result、ResultCode、Constants、PageQuery、PageResult
-│   └── aspect/                LogAspect 请求日志切面
-├── config/                    JacksonConfig、MybatisPlusConfig、WebMvcConfig
-├── controller/                接口层
-├── domain/entity/             实体：BaseEntity / SoftDeleteEntity 及 5 张表对应实体
-├── exception/                 BusinessException、GlobalExceptionHandler
-├── mapper/                    MyBatis-Plus Mapper
-├── service/                   业务服务层（空，待实现）
-├── utils/                     StrUtils、DateUtils、ValidateUtils、JsonUtils
-└── rag/                       RAG 引擎（占位，待实现）
-    ├── ingest/                文档解析与切分
-    ├── retrieval/             向量检索
-    ├── llm/                   大模型调用
-    └── chat/                  问答编排
-src/main/resources/
-├── application.yml            公共配置
-├── application-dev.yml        开发环境
-└── application-prod.yml       生产环境
+```text
+AnsweringSystem/
+├── backend/                 Spring Boot 后端
+│   ├── .mvn/               Maven Wrapper 配置
+│   ├── src/main/           Java 源码与应用配置
+│   ├── src/test/           测试代码与测试资源
+│   ├── pom.xml             后端 Maven 构建入口
+│   ├── mvnw / mvnw.cmd     Maven Wrapper 启动脚本
+│   ├── schema.sql          数据库初始化脚本
+│   └── README.md           后端配置、启动与测试说明
+├── frontend/                Vue 3 + TypeScript + Vite 问答工作台
+├── redis/                   Redis 配置占位
+├── docs/                    共享开发记录与待办
+├── scripts/                 仓库级编码检查脚本
+├── ai-guardrails/           协作护栏模板
+├── physics-agent/           参考项目
+├── AGENTS.md / CLAUDE.md    协作规则
+└── 01-*.md ～ 08-*.md       需求、架构与开发参考文档
 ```
 
-数据表：`sys_user`、`rag_document`、`rag_chunk`、`rag_conversation`、`rag_message`。
-表作用、逻辑关联与索引用途见 `schema.sql` 头部注释。
+后端构建产物位于 `backend/target/`；以 `backend/` 为工作目录启动时，日志写入 `backend/logs/`。这些产物继续由根目录 `.gitignore` 忽略。
 
-## 接口约定
+## 后端入口
 
-所有接口返回统一的 `Result<T>`：
+技术栈：Spring Boot 3.3.5、Java 17、Maven。完整配置见 [后端说明](backend/README.md)，当前进度与验证边界见 [开发待办](docs/开发待办.md)。
 
-```json
-{"code":0,"message":"成功","data":{},"timestamp":1700000000000}
+在系统根目录使用 PowerShell：
+
+```powershell
+Set-Location backend
+.\mvnw.cmd -B verify
+.\mvnw.cmd spring-boot:run
 ```
 
-- `code` 为 `0` 表示成功，非 `0` 见 `ResultCode`
-- 业务异常抛 `BusinessException`，由 `GlobalExceptionHandler` 统一转换，HTTP 状态码仍为 200
-- 参数校验失败、404、405 等框架层错误返回真实的 4xx/5xx 状态码
-- 分页接口统一用 `PageQuery` 入参、`PageResult<T>` 出参
+也可留在系统根目录，显式指定后端构建入口：
 
-## 构建与测试
-
-```bash
-./mvnw -B verify                    # 编译 + 单元测试
-./mvnw test -Dtest=MapperCrudIT     # 需要真实 MySQL，验证 Mapper 增删改查
+```powershell
+.\backend\mvnw.cmd -f backend/pom.xml -B verify
 ```
 
-`MapperCrudIT` 故意以 `IT` 结尾，surefire 默认不匹配该后缀，因此不连数据库的环境上 `./mvnw test` 也能通过。它用 `@Transactional` 回滚，不会残留测试数据。
+IDEA 可继续打开系统根目录，重新加载 `backend/pom.xml`。应用与 JUnit 的工作目录使用 `$PROJECT_DIR$/backend`；如果直接打开 `backend/`，使用 `$PROJECT_DIR$`。已有环境变量保留在本机运行配置中，不写入文档或提交。
 
-## 本机注意事项
+本机验证记录（2026-10-16）：原 Windows Wrapper 在读取本机 `.m2` 目录链接属性时出现 `Cannot index into a null array`，尚未进入 Maven；脚本内容与迁移前一致。本次保留原脚本，使用本机已缓存的 Maven 从系统根目录验证成功，命令如下：
 
-**1. 中文日志乱码**
-
-Maven 自身的 JVM 在 Windows 上按 GBK 转发输出，导致测试日志里的中文显示为乱码（源码文件本身没问题）。加上这个环境变量即可：
-
-```bash
-MAVEN_OPTS="-Dstdout.encoding=UTF-8" ./mvnw test
+```powershell
+$env:JAVA_HOME = 'D:\JAVA\jdk-21'
+$env:MAVEN_OPTS = '-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8'
+& 'C:\Users\Administrator\.m2\wrapper\dists\apache-maven-3.9.9\937e263b\bin\mvn.cmd' -s 'C:\Users\Administrator\.m2\settings.xml' -o -B -f backend/pom.xml verify
 ```
 
-**2. `JAVA_HOME` 必须指向 JDK**
+上述绝对路径仅对应本机已有安装；其他机器按实际 Maven 安装位置调整。此轮 472 项离线测试通过，未执行数据库或付费 API 集成测试。
 
-指向 JRE 会导致编译失败。可先确认：
+## 前端与 Redis
 
-```bash
-"$JAVA_HOME/bin/java" -version
-```
+[前端工作台](frontend/README.md) 已搭建本地开发界面，包含问答、分项结果、来源面板、会话分组和异常反馈。在 `frontend/` 中运行 `npm.cmd ci`、`npm.cmd run dev` 后，访问 `http://localhost:5173/`。真实请求代理至本机 8080 端口；示例明确标注为界面演示。当前会话仅存在页面内存中，刷新清空，知识库尚未接入。
 
-**3. Maven 本地仓库位置**
+侧栏“商品查询”通过 `POST /api/products/search` 调用dev后端的 `ProductSearchService`，当前实现为 `MockProductSearchService`。可试“咖啡”“奶茶”“晚餐”；商品、门店及参考价格为固定示例，链接只打开淘宝首页，不对应真实商品，也不产生订单、支付或补贴。重启最新版dev后端即可使用，不需要新增API密钥。生产profile不注册该演示入口；真实适配器待授权后独立联调，不以切换配置代替验收。
 
-若 `~/.m2/settings.xml` 里配置了 `localRepository`，依赖会下载到该路径，而不是默认的 `~/.m2/repository`。排查依赖问题时注意确认实际路径。
+本轮前端类型检查/打包、18项单元与16项浏览器检查通过；浏览器拦截问答/商品接口和外部导航，不消耗第三方费用。商品后端25项通过，但全量后端703项中仍有一项既有HTTP并发预算测试失败，整体构建未通过，详见产品定版交接；不将模块通过当作可发布。真实后端与渠道联调另验。
 
-## 提交规范
+[Redis 目录](redis/README.md) 仍仅预留位置，尚未部署 Redis 或接入缓存。
 
-提交信息使用约定式提交（Conventional Commits），如 `feat:`、`fix:`、`chore:`、`docs:`。
+根目录的 `.editorconfig`、`.gitattributes`、`.gitignore` 和 [协作规则](AGENTS.md) 继续覆盖各子目录。
 
-## 开发约定
+## 开发接续与上下文存档
 
-详见 `CLAUDE.md`（执行版）与 `AGENTS.md`（完整规则）。要点：小步改动、精确编辑、文件统一 UTF-8 + LF、不碰密钥。
+当前接续入口：[知序产品定版交接](docs/开发上下文交接-知序产品定版-2026-10-17.md)。历史 [早期开发交接](docs/开发上下文交接-2026-10-17.md)、[日期地点与偏好交接](docs/开发上下文交接-2026-10-17-日期地点与偏好.md)、[会话单元说明](docs/会话业务单元说明.md) 与 [联网问答闭环说明](docs/联网问答最小闭环说明.md) 保持原文，记录对应时点的实现证据，不覆盖当前产品范围和下一单元顺序。
+
+旧交接快照曾记录离线回归 542 项通过、真实 GPT 配受控资料两项通过；这不是最新总测试数，也不代表企业知识库或事务流程通过验收。实际验证范围按各轮记录分别核对，不累加为本轮成绩。接续时不从头初始化、不恢复迁移前目录，也不把设计提案当成已实现功能。
