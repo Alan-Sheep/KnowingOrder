@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { createEnterpriseClient, EnterpriseError } from '../enterprise';
+import { createEnterpriseClient } from '../enterprise';
 import type { AffairSummary } from '../affairs';
+import { useSession } from '../session';
 import AppIcon from './AppIcon.vue';
 
 // 工作台概览：登录后最想知道的三件事——有几个空间、有没有要我确认的、我的申请到哪一步。
 // 之前这一页只有导航按钮，员工要自己点进四个页面才知道自己有什么要做。
 const emit = defineEmits<{ navigate: [page: 'enterprise' | 'knowledge' | 'affairs']; login: [] }>();
 const api = createEnterpriseClient();
+// 登录状态读全局那一份，不再自己问一次 /api/auth/me。
+const { ensure } = useSession();
 const state = ref<'checking' | 'anonymous' | 'ready' | 'error'>('checking');
 const message = ref('');
 const enterpriseName = ref('');
@@ -26,8 +29,13 @@ async function load() {
   state.value = 'checking';
   message.value = '';
   try {
-    const current = await api.me();
+    const current = await ensure();
     if (!mounted) return;
+    if (!current) {
+      state.value = 'anonymous';
+      message.value = '登录企业账号后，这里会显示你能访问的空间与待办。';
+      return;
+    }
     const list = current.enterprises ?? [];
     if (!current.enterprises) {
       state.value = 'anonymous';
@@ -63,11 +71,6 @@ async function load() {
     }
   } catch (error) {
     if (!mounted) return;
-    if (error instanceof EnterpriseError && error.code === 401) {
-      state.value = 'anonymous';
-      message.value = '登录企业账号后，这里会显示你能访问的空间与待办。';
-      return;
-    }
     state.value = 'error';
     message.value = error instanceof Error ? error.message : '概览暂时没读出来。';
   }

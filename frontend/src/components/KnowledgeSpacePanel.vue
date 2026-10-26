@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { createEnterpriseClient, EnterpriseError, positiveId } from '../enterprise';
 import type { Account, KnowledgeSpace, SpacePage } from '../enterprise';
+import { useSession } from '../session';
 import KnowledgeDocumentsPanel from './KnowledgeDocumentsPanel.vue';
 import OrganizationPanel from './OrganizationPanel.vue';
 import AccountPasswordPanel from './AccountPasswordPanel.vue';
@@ -10,7 +11,8 @@ import AppIcon from './AppIcon.vue';
 const props = defineProps<{ returnLabel?: string }>();
 const emit = defineEmits<{ authenticated: [] }>();
 const api = createEnterpriseClient();
-const user = ref<Account>();
+// 登录状态与工作台、企业问答、员工事务共用同一份；这里通常是登录的入口页。
+const { user, ensure, login: signIn, logout: signOut, markAnonymous } = useSession();
 const username = ref('');
 const password = ref('');
 const enterpriseId = ref('');
@@ -43,7 +45,7 @@ async function run(kind: string, work: () => Promise<void>): Promise<boolean> {
     if (!mounted) return false;
     failed.value = true;
     message.value = error instanceof EnterpriseError ? error.message : '操作未完成，请稍后手动重试。';
-    if (error instanceof EnterpriseError && error.code === 401) { user.value = undefined; result.value = undefined; listing.value = undefined; }
+    if (error instanceof EnterpriseError && error.code === 401) { markAnonymous(); result.value = undefined; listing.value = undefined; }
     if (error instanceof EnterpriseError && error.code === 404) listing.value = undefined;
     if (error instanceof EnterpriseError && error.uncertain) unknownCreation.value = true;
     return false;
@@ -54,14 +56,13 @@ async function run(kind: string, work: () => Promise<void>): Promise<boolean> {
 }
 async function login() {
   const ok = await run('login', async () => {
-    await connect(await api.login(username.value, password.value));
+    await connect(await signIn(username.value, password.value));
     result.value = undefined;
   });
   // 只有真的登录成功才回跳；失败了就留在本页看提示，不然用户会被弹回去又进不来。
   if (ok && user.value) emit('authenticated');
 }
 async function connect(current: Account) {
-  user.value = current;
   enterpriseId.value = current.enterprises?.length === 1 ? current.enterprises[0]!.enterpriseId : '';
   if (!current.enterprises) { failed.value = true; message.value = '登录信息尚不包含所属企业，请重启最新版后端后刷新。'; return; }
   if (!current.enterprises.length) { message.value = '账号尚未分配企业，请联系管理员开通成员身份。'; return; }
@@ -71,8 +72,7 @@ async function connect(current: Account) {
 }
 async function logout() {
   await run('logout', async () => {
-    await api.logout();
-    user.value = undefined;
+    await signOut();
     result.value = undefined;
     listing.value = undefined;
     username.value = '';
@@ -124,12 +124,14 @@ async function browseSpaces() {
 }
 onMounted(async () => {
   try {
-    const current = await api.me();
-    if (mounted) await connect(current);
+    const current = await ensure();
+    if (!mounted) return;
+    if (current) await connect(current);
+    else message.value = '请使用管理员开通的企业账号登录，不开放公开注册。';
   } catch (error) {
     if (mounted) {
-      failed.value = !(error instanceof EnterpriseError && error.code === 401);
-      message.value = failed.value ? (error instanceof Error ? error.message : '登录状态核对失败。') : '请使用管理员开通的企业账号登录，不开放公开注册。';
+      failed.value = true;
+      message.value = error instanceof Error ? error.message : '登录状态核对失败。';
     }
   } finally { if (mounted) busy.value = ''; }
 });
@@ -167,8 +169,8 @@ onUnmounted(() => { mounted = false; password.value = ''; api.dispose(); });
       <button v-if="result" type="button" class="back-to-spaces" :disabled="!!busy || documentBusy" @click="browseSpaces"><AppIcon name="chevron" :size="14" />返回空间目录</button>
       <article v-if="result" class="space-result" aria-label="知识空间结果"><span class="selected-space-icon"><AppIcon name="book" :size="26" /></span><div><span class="eyebrow">当前知识空间</span><h3>{{ result.name }}</h3><small>资料按版本留存，回答可以回溯到原文</small></div><span class="private-badge"><AppIcon name="shield" :size="14" />已通过授权校验</span></article>
       <KnowledgeDocumentsPanel v-if="result" :key="resultEnterprise + ':' + result.id" :enterprise-id="resultEnterprise" :space="result"
-        @updated="result = $event; listing = undefined" @expired="user = undefined; result = undefined; listing = undefined" @busy="documentBusy = $event" />
-      <details class="workspace-administration"><summary><AppIcon name="settings" :size="17" /><span>工作区管理<small>账号安全、部门与成员</small></span><AppIcon name="chevron" :size="16" /></summary><AccountPasswordPanel :disabled="!!busy || documentBusy" @busy="documentBusy = $event" @changed="user = undefined; result = undefined; listing = undefined; message = '口令已修改，请使用新口令重新登录。'" /><OrganizationPanel v-if="validEnterprise" :key="enterpriseId" :enterprise-id="enterpriseId" :disabled="!!busy || documentBusy" @busy="documentBusy = $event" @expired="user = undefined; result = undefined; listing = undefined" /></details>
+        @updated="result = $event; listing = undefined" @expired="markAnonymous(); result = undefined; listing = undefined" @busy="documentBusy = $event" />
+      <details class="workspace-administration"><summary><AppIcon name="settings" :size="17" /><span>工作区管理<small>账号安全、部门与成员</small></span><AppIcon name="chevron" :size="16" /></summary><AccountPasswordPanel :disabled="!!busy || documentBusy" @busy="documentBusy = $event" @changed="markAnonymous(); result = undefined; listing = undefined; message = '口令已修改，请使用新口令重新登录。'" /><OrganizationPanel v-if="validEnterprise" :key="enterpriseId" :enterprise-id="enterpriseId" :disabled="!!busy || documentBusy" @busy="documentBusy = $event" @expired="markAnonymous(); result = undefined; listing = undefined" /></details>
     </template>
   </section>
 </template>

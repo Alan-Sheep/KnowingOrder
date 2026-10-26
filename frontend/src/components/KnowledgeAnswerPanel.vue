@@ -4,12 +4,14 @@ import { createEnterpriseClient, EnterpriseError, positiveId } from '../enterpri
 import type { Account, KnowledgeSpace } from '../enterprise';
 import type { Evidence, KnowledgeAnswer } from '../knowledge-answer';
 import type { WorkspaceChat, WorkspaceJob } from '../knowledge-workspace';
+import { useSession } from '../session';
 import KnowledgeFeedbackPanel from './KnowledgeFeedbackPanel.vue';
 import AppIcon from './AppIcon.vue';
 
 const emit = defineEmits<{ manage: []; general: []; login: [] }>();
 const api = createEnterpriseClient();
-const user = ref<Account>();
+// 登录状态与工作台、员工事务、知识空间共用同一份。
+const { user, ensure, markAnonymous } = useSession();
 const checking = ref(true);
 const enterpriseId = ref('');
 const spaceId = ref('');
@@ -93,7 +95,7 @@ watch([enterpriseId, spaceId], async () => {
 watch(enterpriseId, () => { spaces.value = []; spaceId.value = ''; });
 
 function failure(error: unknown): string {
-  if (error instanceof EnterpriseError && error.code === 401) { user.value = undefined; cards.value = []; source.value = undefined; }
+  if (error instanceof EnterpriseError && error.code === 401) { markAnonymous(); cards.value = []; source.value = undefined; }
   return error instanceof EnterpriseError ? error.message : '请求未完成，请检查服务后手动重试。';
 }
 async function list() {
@@ -112,7 +114,6 @@ async function list() {
   finally { if (mounted) listing.value = false; }
 }
 async function connect(current: Account) {
-  user.value = current;
   enterpriseId.value = current.enterprises?.length === 1 ? current.enterprises[0]!.enterpriseId : '';
   if (!current.enterprises) { notice.value = '登录信息尚不包含所属企业，请重启最新版后端后刷新。'; return; }
   if (!current.enterprises.length) { notice.value = '账号尚未分配企业，请联系管理员。'; return; }
@@ -300,8 +301,13 @@ async function inspect(evidence: Evidence) {
   } catch (error) { if (mounted && generation === sourceGeneration) sourceNotice.value = failure(error); }
 }
 onMounted(async () => {
-  try { const current = await api.me(); if (mounted) await connect(current); }
-  catch (error) { if (mounted) notice.value = error instanceof EnterpriseError && error.code === 401 ? '请先前往知识空间，使用管理员开通的企业账号登录。' : failure(error); }
+  try {
+    const current = await ensure();
+    if (!mounted) return;
+    if (current) await connect(current);
+    else notice.value = '请先前往知识空间，使用管理员开通的企业账号登录。';
+  }
+  catch (error) { if (mounted) notice.value = failure(error); }
   finally { if (mounted) checking.value = false; }
 });
 onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer); api.dispose(); });

@@ -124,6 +124,16 @@ try {
   await cdp('Page.navigate', { url: base });
   await wait('document.querySelector(".overview-empty") !== null', '工作台未登录提示');
 
+  /**
+   * 登录态现在存在前端模块里，同一会话内切页不再重新询问后端。
+   * 所以要模拟一个「未登录访客」，必须重新加载页面，让模块重新核验一次。
+   */
+  const reopenAsGuest = async () => {
+    loggedIn = false;
+    await cdp('Page.navigate', { url: base });
+    await wait('document.querySelector(".overview-empty") !== null', '工作台未登录提示');
+  };
+
   // ① 工作台 → 登录 → 必须回到工作台。
   await click('用企业账号登录');
   await wait('document.querySelector(".account-form") !== null', '知识空间登录表单');
@@ -141,7 +151,7 @@ try {
   await shot('02-back-to-home');
 
   // ② 企业问答 → 登录 → 必须回到企业问答。
-  loggedIn = false;
+  await reopenAsGuest();
   await click('企业问答');
   await wait('document.querySelector(".answer-login-state") !== null', '企业问答未登录态');
   await click('登录并开始');
@@ -159,7 +169,7 @@ try {
   await shot('04-back-to-answer');
 
   // ③ 本来就在知识空间登录，不该被弹走。
-  loggedIn = false;
+  await reopenAsGuest();
   await click('知识空间');
   await wait('document.querySelector(".account-form") !== null', '知识空间登录表单');
   assert.equal(await evaluate(`document.querySelector('.login-return') !== null`), false, '直接来知识空间登录时不应显示回流提示');
@@ -170,8 +180,8 @@ try {
   await shot('05-stay-in-knowledge');
 
   // ④ 登录失败不许回跳：否则会被弹回来源页，反而看不到错误原因。
-  loggedIn = false;
   loginResult = 'denied';
+  await reopenAsGuest();
   await click('企业问答');
   await wait('document.querySelector(".answer-login-state") !== null', '企业问答未登录态');
   await click('登录并开始');

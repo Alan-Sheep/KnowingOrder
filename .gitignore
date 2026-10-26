@@ -91,3 +91,5 @@ target/
 # ===== 测试与评估的临时输出 =====
 eval/results/*.json
 !eval/results/.gitkeep
+# 回归脚本每次运行都会重写截图，属于本地产物，不进版本控制
+test-artifacts/

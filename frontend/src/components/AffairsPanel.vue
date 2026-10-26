@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { createEnterpriseClient, EnterpriseError, positiveId } from '../enterprise';
 import type { Account } from '../enterprise';
+import { useSession } from '../session';
 import type { AffairApplication, AffairEligibility, AffairFinanceApplication, AffairMember,
   AffairPending, AffairReceipt, AffairsRule, AffairSettlement, AffairSummary, AffairsPage } from '../affairs';
 import AppIcon from './AppIcon.vue';
@@ -9,7 +10,8 @@ import RetryNotice from './RetryNotice.vue';
 
 // 员工事务：申请、参与确认、凭证与财务协同。金额一律以“分”的字符串提交。
 const api = createEnterpriseClient();
-const user = ref<Account>();
+// 登录状态与工作台、企业问答、知识空间共用同一份，不再各自保存副本。
+const { user, ensure, login: signIn, logout: signOut, markAnonymous } = useSession();
 const username = ref('');
 const password = ref('');
 const enterpriseId = ref('');
@@ -148,7 +150,7 @@ async function run(label: string, work: () => Promise<void>) {
     if (!mounted) return;
     failed.value = true;
     message.value = error instanceof Error ? error.message : '操作未完成，请稍后手动重试。';
-    if (error instanceof EnterpriseError && error.code === 401) user.value = undefined;
+    if (error instanceof EnterpriseError && error.code === 401) markAnonymous();
   } finally {
     if (mounted) busy.value = '';
     password.value = '';
@@ -157,10 +159,9 @@ async function run(label: string, work: () => Promise<void>) {
 function ready() { return !!user.value && positiveId(enterpriseId.value); }
 
 async function login() {
-  await run('login', async () => { await connect(await api.login(username.value, password.value)); });
+  await run('login', async () => { await connect(await signIn(username.value, password.value)); });
 }
 async function connect(current: Account) {
-  user.value = current;
   enterpriseId.value = current.enterprises?.length === 1 ? current.enterprises[0]!.enterpriseId : '';
   if (!current.enterprises) { failed.value = true; message.value = '登录信息尚不包含所属企业，请重启最新版后端后刷新。'; return; }
   if (!current.enterprises.length) { message.value = '账号尚未分配企业，请联系管理员开通成员身份。'; return; }
@@ -170,8 +171,7 @@ async function connect(current: Account) {
 }
 async function logout() {
   await run('logout', async () => {
-    await api.logout();
-    user.value = undefined;
+    await signOut();
     detail.value = undefined;
     rules.value = mine.value = pending.value = finance.value = settlements.value = receipts.value = undefined;
     username.value = enterpriseId.value = '';
@@ -186,7 +186,7 @@ async function guard(key: BlockKey, work: () => Promise<void>) {
     return true;
   } catch (error) {
     if (!mounted) return false;
-    if (error instanceof EnterpriseError && error.code === 401) user.value = undefined;
+    if (error instanceof EnterpriseError && error.code === 401) markAnonymous();
     blockErrors[key] = error instanceof Error ? error.message : '加载失败，请稍后重试。';
     return false;
   }
@@ -454,12 +454,14 @@ watch(enterpriseId, () => {
 
 onMounted(async () => {
   try {
-    const current = await api.me();
-    if (mounted) await connect(current);
+    const current = await ensure();
+    if (!mounted) return;
+    if (current) await connect(current);
+    else message.value = '请使用企业账号登录，不开放公开注册。';
   } catch (error) {
     if (mounted) {
-      failed.value = !(error instanceof EnterpriseError && error.code === 401);
-      message.value = failed.value ? (error instanceof Error ? error.message : '登录状态核对失败。') : '请使用企业账号登录，不开放公开注册。';
+      failed.value = true;
+      message.value = error instanceof Error ? error.message : '登录状态核对失败。';
     }
   } finally { if (mounted) busy.value = ''; }
 });
