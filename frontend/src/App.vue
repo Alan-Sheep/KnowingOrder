@@ -9,6 +9,7 @@ import { effectiveAnswerLanguage, formatMessageTime, loadPreferences } from './p
 import { translate } from './messages';
 import { safeUrl, sendQuestion } from './api';
 import { createDemo } from './demo';
+import { publicChatEnabled } from './public-chat';
 import type { ChatTurn, Conversation, PartStatus } from './types';
 
 const conversations = ref<Conversation[]>([]);
@@ -43,7 +44,7 @@ const turns = computed(() => active.value?.turns ?? []);
 const hasTurns = computed(() => turns.value.length > 0);
 const pendingCount = computed(() => conversations.value.reduce((sum, item) => sum + item.turns.filter(turn => turn.state === 'pending').length, 0));
 const questionLength = computed(() => Array.from(draft.value).length);
-const canSend = computed(() => page.value === 'chat' && draft.value.trim().length > 0 && questionLength.value <= 500 && pendingCount.value < 2 && online.value);
+const canSend = computed(() => publicChatEnabled && page.value === 'chat' && draft.value.trim().length > 0 && questionLength.value <= 500 && pendingCount.value < 2 && online.value);
 const history = computed(() => conversations.value.filter(item => item.turns.length && item.title.toLocaleLowerCase().includes(historyQuery.value.toLocaleLowerCase())).slice().reverse());
 const selectedTurn = computed(() => turns.value.find(turn => turn.id === selectedTurnId.value && turn.answer)
   ?? turns.value.filter(turn => turn.answer).at(-1));
@@ -297,7 +298,7 @@ onUnmounted(() => {
     <main class="main-panel">
       <header class="topbar">
         <div class="breadcrumb"><button class="icon-button mobile-menu" :aria-label="t('打开导航')" @click="sidebarOpen = true"><AppIcon name="menu" /></button><span class="breadcrumb-root">{{ t('工作空间') }}</span><span class="breadcrumb-slash">/</span><strong>{{ t(pageTitles[page]) }}</strong></div>
-        <div class="header-actions"><span class="environment"><i :class="{ offline: !online }"></i>{{ t(online ? '本地开发' : '网络离线') }}</span><span class="header-divider"></span><template v-if="page === 'chat'"><button class="icon-button" :title="t('导出当前对话')" :aria-label="t('导出当前对话')" @click="exportConversation"><AppIcon name="download" :size="18" /></button><button class="context-toggle" :class="{ selected: contextOpen }" :aria-expanded="contextOpen" aria-controls="context-panel" @click="contextOpen = !contextOpen"><AppIcon name="panel" :size="17" /><span>{{ t('参考资料') }}</span></button></template><button v-else class="icon-button" :aria-label="t('使用指南')" @click="openDialog('help')"><AppIcon name="info" :size="18" /></button></div>
+        <div class="header-actions"><span class="environment"><i :class="{ offline: !online }"></i>{{ t(online ? '本地开发' : '网络离线') }}</span><span class="header-divider"></span><template v-if="page === 'chat' && publicChatEnabled"><button class="icon-button" :title="t('导出当前对话')" :aria-label="t('导出当前对话')" @click="exportConversation"><AppIcon name="download" :size="18" /></button><button class="context-toggle" :class="{ selected: contextOpen }" :aria-expanded="contextOpen" aria-controls="context-panel" @click="contextOpen = !contextOpen"><AppIcon name="panel" :size="17" /><span>{{ t('参考资料') }}</span></button></template><button v-else class="icon-button" :aria-label="t('使用指南')" @click="openDialog('help')"><AppIcon name="info" :size="18" /></button></div>
       </header>
       <Transition name="page" mode="out-in">
         <EnterpriseWorkspace v-if="page !== 'chat'" :key="page" :page="page" :login-return-label="loginReturn ? pageTitles[loginReturn] : ''" @navigate="navigate" @products="openDialog('products')" @login="startLogin" @authenticated="finishLogin" />
@@ -305,6 +306,17 @@ onUnmounted(() => {
       <!-- 保留问答组件实例，切换工作区不丢弃在途请求；提交入口同时检查当前页面。 -->
       <div v-show="page === 'chat'" class="chat-layout">
         <section class="chat-column" aria-label="问答工作区">
+          <div v-if="!publicChatEnabled" class="chat-parked">
+            <span class="chat-parked-icon"><AppIcon name="globe" :size="26" /></span>
+            <h1>{{ t('公开联网问答体验未开启') }}</h1>
+            <p class="chat-parked-lead">{{ t('这个入口会调用外部联网搜索与外部模型，属于开发期验证功能。当前部署没有开放它，是为了避免一个无需登录的公开接口被滥用、消耗外部额度。') }}</p>
+            <p class="chat-parked-note">{{ t('需要查企业内部资料，请使用「企业问答」——回答带引用、带版本、带权限校验。') }}</p>
+            <div class="chat-parked-actions">
+              <button type="button" class="parked-primary" @click="navigate('enterprise')">{{ t('前往企业问答') }}</button>
+              <a class="parked-ghost" href="https://www.bing.com" target="_blank" rel="noopener noreferrer">{{ t('打开公开搜索引擎') }}<AppIcon name="external" :size="13" /></a>
+            </div>
+          </div>
+          <template v-else>
           <div v-if="!online" class="offline-banner" role="status"><AppIcon name="info" :size="16" />{{ t('网络已断开，恢复后可继续提问。请求不会自动重发。') }}</div>
           <div ref="feed" class="conversation-scroll" :class="{ 'is-welcome': !hasTurns }">
             <section v-if="!hasTurns" class="welcome">
@@ -359,10 +371,11 @@ onUnmounted(() => {
             </form>
             <div class="composer-hint"><span v-if="questionLength > 500" class="invalid" role="alert">{{ t('问题最多 500 个字符，请精简后发送。') }}</span><span v-else>Enter ↗<span class="hint-separator">·</span>Shift + Enter ↵</span><span>请勿输入内部资料 · 刷新后会话清空</span></div>
           </div>
+          </template>
         </section>
 
-        <button v-if="contextOpen" class="context-scrim" :aria-label="t('关闭参考资料')" @click="contextOpen = false"></button>
-        <aside v-if="contextOpen" id="context-panel" class="context-panel" aria-label="参考资料与回答详情">
+        <button v-if="publicChatEnabled && contextOpen" class="context-scrim" :aria-label="t('关闭参考资料')" @click="contextOpen = false"></button>
+        <aside v-if="publicChatEnabled && contextOpen" id="context-panel" class="context-panel" aria-label="参考资料与回答详情">
           <div class="context-heading"><div><AppIcon name="book" :size="17" /><strong>{{ t('参考资料') }}</strong><span>{{ sources.length }}</span></div><button class="icon-button" :aria-label="t('关闭参考资料')" @click="contextOpen = false"><AppIcon name="close" :size="16" /></button></div>
           <div class="context-content">
             <template v-if="selectedTurn?.answer">
@@ -476,6 +489,63 @@ onUnmounted(() => {
   transition: background var(--dur-1), color var(--dur-1);
 }
 .public-new-chat:hover { color: var(--brand-700); background: var(--brand-50); }
+
+/* 公开联网问答未开启时的说明态：入口保留，但不让用户点进一个会报 404 的页面。 */
+.chat-parked {
+  max-width: 560px;
+  margin: auto;
+  padding: var(--sp-8) var(--sp-6);
+}
+.chat-parked-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-md);
+  background: var(--brand-50);
+  color: var(--brand-600);
+}
+.chat-parked h1 {
+  margin: var(--sp-5) 0 var(--sp-3);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  letter-spacing: -.2px;
+}
+.chat-parked-lead,
+.chat-parked-note {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--text-secondary);
+}
+.chat-parked-note { margin-bottom: var(--sp-6); color: var(--text-tertiary); }
+.chat-parked-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.parked-primary {
+  height: 40px;
+  padding: 0 var(--sp-5);
+  border-radius: var(--r-sm);
+  background: var(--brand-600);
+  color: var(--text-inverse);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  transition: background var(--dur-1);
+}
+.parked-primary:hover { background: var(--brand-700); }
+.parked-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  transition: border-color var(--dur-1), color var(--dur-1);
+}
+.parked-ghost:hover { border-color: var(--brand-200); color: var(--brand-700); }
 
 .enterprise-shell .history-heading { margin-top: var(--sp-4); }
 .enterprise-shell .history-empty { padding: var(--sp-6) 0; }

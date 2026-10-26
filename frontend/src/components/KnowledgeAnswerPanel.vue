@@ -5,6 +5,7 @@ import type { Account, KnowledgeSpace } from '../enterprise';
 import type { Evidence, KnowledgeAnswer } from '../knowledge-answer';
 import type { WorkspaceChat, WorkspaceJob } from '../knowledge-workspace';
 import { useSession } from '../session';
+import { publicChatEnabled } from '../public-chat';
 import KnowledgeFeedbackPanel from './KnowledgeFeedbackPanel.vue';
 import AppIcon from './AppIcon.vue';
 
@@ -319,14 +320,21 @@ function collapse() {
  * “校内资料没有覆盖”，不能替用户下范围结论，两种措辞必须分开。
  */
 function redirect(answer: KnowledgeAnswer): string {
+  // 生产部署里公开联网问答是关闭的，措辞必须指向用户当下真能用的地方，
+  // 否则会把人从“答不上来”再送到一个“此功能未开启”的说明页。
+  const outward = publicChatEnabled ? '公开联网问答' : '公开搜索引擎（如必应、百度）';
   const statuses = answer.parts.map(part => part.status);
   if (statuses.includes('OUT_OF_SCOPE'))
-    return '这个问题不属于当前学校的业务范围，校内资料里不会有答案。可自行前往公开联网问答；那里只切换页面，不携带当前问题、学校原文或会话历史，请勿输入内部信息。';
+    return `这个问题不属于当前学校的业务范围，校内资料里不会有答案。可自行使用${outward}查询；那里不携带当前问题、学校原文或会话历史，请勿输入内部信息。`;
   if (statuses.includes('SCOPE_UNKNOWN'))
-    return '暂时判断不了这属于哪一项校内业务，所以没有给出制度结论。可以补上具体的校内对象再问一次；如果本来就是校外的公开信息，请到公开联网问答。';
+    return `暂时判断不了这属于哪一项校内业务，所以没有给出制度结论。可以补上具体的校内对象再问一次；如果本来就是校外的公开信息，请到${outward}。`;
   if (statuses.includes('EVIDENCE_ONLY') || statuses.includes('NO_EVIDENCE'))
-    return '现有校内资料里没有能直接回答这个问题的内容。如果是校外的公开信息（活动、新闻、通用常识），请到公开联网问答；如果确实是校内事务，可以换个说法再问，或反馈让知识负责人补充资料。';
+    return `现有校内资料里没有能直接回答这个问题的内容。如果是校外的公开信息（活动、新闻、通用常识），请到${outward}；如果确实是校内事务，可以换个说法再问，或反馈让知识负责人补充资料。`;
   return '';
+}
+/** 公开联网问答未开启时，直接把用户送到公开搜索引擎，而不是站内的“未开启”说明页。 */
+function openPublicSearch() {
+  window.open('https://www.bing.com', '_blank', 'noopener,noreferrer');
 }
 onMounted(async () => {
   try {
@@ -491,7 +499,8 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
 
                     <div v-if="redirect(card.answer)" class="answer-scope-switch">
                       <p>{{ redirect(card.answer) }}</p>
-                      <button type="button" @click="emit('general')">前往公开联网问答</button>
+                      <button v-if="publicChatEnabled" type="button" @click="emit('general')">前往公开联网问答</button>
+                      <button v-else type="button" @click="openPublicSearch">用必应搜一下</button>
                     </div>
 
                     <details v-if="card.answer.evidence.length" class="answer-evidence">

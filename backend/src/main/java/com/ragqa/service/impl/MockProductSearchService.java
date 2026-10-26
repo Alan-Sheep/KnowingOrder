@@ -4,16 +4,17 @@ import com.ragqa.domain.dto.ProductSearchResult;
 import com.ragqa.exception.BusinessException;
 import com.ragqa.service.ProductSearchService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 
-/** 固定测试目录适配器：仅在dev且选择mock时装配，无数据库和外部网络调用。 */
+/**
+ * 固定示例目录适配器：无数据库调用、无外部网络请求、不产生订单或补贴记录，
+ * 因此不限制运行环境；只有配置 {@code knowingorder.products.provider} 为其它值时才换用真实实现。
+ */
 @Service
-@Profile("dev")
 @ConditionalOnProperty(name = "knowingorder.products.provider", havingValue = "mock", matchIfMissing = true)
 public class MockProductSearchService implements ProductSearchService {
 
