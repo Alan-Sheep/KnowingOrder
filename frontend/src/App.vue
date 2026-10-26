@@ -274,9 +274,9 @@ onUnmounted(() => {
         <button class="nav-item" :class="{ active: page === 'affairs' }" :aria-current="page === 'affairs' ? 'page' : undefined" @click="navigate('affairs')"><AppIcon name="briefcase" :size="18" />员工事务</button>
         <span class="nav-group-label">公开体验</span>
         <button class="nav-item" :class="{ active: page === 'chat' }" :aria-current="page === 'chat' ? 'page' : undefined" @click="navigate('chat')"><AppIcon name="globe" :size="18" />联网问答体验<AppIcon class="nav-end-icon" name="external" :size="13" /></button>
-        <button v-if="page === 'chat'" class="public-new-chat" @click="newConversation"><AppIcon name="plus" :size="14" />{{ t('开启新对话') }}</button>
+        <button v-if="page === 'chat' && publicChatEnabled" class="public-new-chat" @click="newConversation"><AppIcon name="plus" :size="14" />{{ t('开启新对话') }}</button>
       </nav>
-      <template v-if="page === 'chat'">
+      <template v-if="page === 'chat' && publicChatEnabled">
       <div class="history-heading"><span>{{ t('当前页面会话') }}</span><span>{{ history.length.toString().padStart(2, '0') }}</span></div>
       <label class="history-search"><AppIcon name="search" :size="15" /><input v-model="historyQuery" :aria-label="t('搜索对话…')" :placeholder="t('搜索对话…')" /></label>
       <div class="history-list">
