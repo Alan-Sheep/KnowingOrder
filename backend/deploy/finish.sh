@@ -74,20 +74,46 @@ RC=$?
 ok "库 ${DB_NAME} 与账号 ${DB_USER}@127.0.0.1 就绪"
 
 # ---------------------------------------------------------------- 3
-step "3/5 导入表结构与迁移"
-TABLES=$("${MYSQL[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}'" 2>/dev/null | tr -d ' \r')
-if [ "${TABLES:-0}" -gt 0 ]; then
-  warn "库内已有 ${TABLES} 张表，跳过 schema 与迁移（避免重复建表报错）"
+step "3/5 导入表结构与增量"
+count_tables() {
+  local n
+  n=$("${MYSQL[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}'" 2>/dev/null | tr -d ' \r')
+  printf '%s' "${n:-0}"
+}
+has_table() {
+  local n
+  n=$("${MYSQL[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}' AND table_name='$1'" 2>/dev/null | tr -d ' \r')
+  [ "${n:-0}" -gt 0 ]
+}
+
+TABLES=$(count_tables)
+if [ "$TABLES" -gt 0 ]; then
+  warn "库内已有 ${TABLES} 张表，跳过 schema.sql（已有库禁止重放）"
 else
   "${MYSQL[@]}" "$DB_NAME" < /tmp/schema.sql || die "schema.sql 导入失败"
-  ok "schema.sql 导入完成"
-  for f in /tmp/sql/migrations/*.sql; do
-    printf '      -> %s\n' "$(basename "$f")"
-    "${MYSQL[@]}" "$DB_NAME" < "$f" || die "迁移失败：$(basename "$f")"
-  done
-  ok "迁移脚本全部执行完成"
+  ok "schema.sql 导入完成（23 张基础表）"
 fi
-printf '    当前表数量 %s\n' "$("${MYSQL[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${DB_NAME}'" 2>/dev/null | tr -d ' \r')"
+
+# 20261017~20261020 的 10 支增量内容已全部并入 schema.sql，
+# 在空库上执行必然因重复建表中断（ERROR 1050），因此只补 schema.sql 未收录的两支。
+if has_table rag_affair_rule; then
+  warn "员工事务表已存在，跳过 20261025_01"
+else
+  "${MYSQL[@]}" "$DB_NAME" < /tmp/sql/migrations/20261025_01_affairs_subsidy.sql \
+    || die "事务增量 20261025_01 失败"
+  ok "员工事务 8 张表 + FINANCE 角色约束已建立"
+fi
+
+if has_table rag_knowledge_chat && \
+   [ "$("${MYSQL[@]}" -N -B -e "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='${DB_NAME}' AND table_name='rag_knowledge_chat' AND column_name='deleted_ms'" 2>/dev/null | tr -d ' \r')" -gt 0 ]; then
+  warn "会话软删除列已存在，跳过 20261025_02"
+else
+  "${MYSQL[@]}" "$DB_NAME" < /tmp/sql/migrations/20261025_02_knowledge_chat_soft_delete.sql \
+    || die "软删除增量 20261025_02 失败"
+  ok "会话软删除列 deleted_ms 已建立"
+fi
+
+printf '    当前表数量 %s\n' "$(count_tables)"
 
 # ---------------------------------------------------------------- 4
 step "4/5 首建企业管理员与演示数据"
