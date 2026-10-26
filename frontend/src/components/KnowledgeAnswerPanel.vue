@@ -35,6 +35,8 @@ const checkingWorkspace = ref(false);
 let workspaceGeneration = 0;
 const source = ref<Evidence>();
 const sourceNotice = ref('');
+/** 当前展开核对的片段；空串表示全部收起。同一条再点一次即收起。 */
+const openChunkId = ref('');
 let mounted = true;
 let sourceGeneration = 0;
 let scopeGeneration = 0;
@@ -57,7 +59,8 @@ watch([enterpriseId, spaceId], async () => {
   loadingHistory.value = false;
   const generation = ++scopeGeneration;
   sourceGeneration++;
-  cards.value = []; source.value = undefined; sourceNotice.value = ''; currentMode.value = ''; retrievalMode.value = '';
+  cards.value = []; source.value = undefined; sourceNotice.value = ''; openChunkId.value = '';
+  currentMode.value = ''; retrievalMode.value = '';
   if (!user.value || !positiveId(enterpriseId.value) || !positiveId(spaceId.value)) return;
   checkingWorkspace.value = true;
   notice.value = '正在核验空间的数据外发边界…';
@@ -229,7 +232,7 @@ watch(() => cards.value.map(card => `${card.pending}:${card.answer ? 1 : 0}`).jo
 const confirmDelete = ref(false);
 function newChat() {
   workspaceGeneration++; sourceGeneration++; chatId.value = crypto.randomUUID(); cards.value = [];
-  source.value = undefined; sourceNotice.value = ''; confirmDelete.value = false;
+  source.value = undefined; sourceNotice.value = ''; openChunkId.value = ''; confirmDelete.value = false;
 }
 /** 删除当前会话：二次确认后软删除，列表同步移除并切回空白会话。 */
 async function removeChat() {
@@ -292,13 +295,38 @@ async function sendFeedback(card: Card) {
   } catch (error) { if (mounted && generation === workspaceGeneration) card.error = failure(error); }
 }
 async function inspect(evidence: Evidence) {
+  // 点已展开的那一条＝收起：不必再到面板顶部找关闭按钮。
+  if (openChunkId.value === evidence.chunkId) { collapse(); return; }
   const generation = ++sourceGeneration;
+  openChunkId.value = evidence.chunkId;
   source.value = undefined;
   sourceNotice.value = '正在重新核验引用权限与发布状态…';
   try {
     const current = await api.evidence(enterpriseId.value, spaceId.value, evidence.chunkId);
     if (mounted && generation === sourceGeneration) { source.value = current; sourceNotice.value = '已重新核验当前可读的原文片段。'; }
   } catch (error) { if (mounted && generation === sourceGeneration) sourceNotice.value = failure(error); }
+}
+/** 收起当前原文核对，回到一览引用的状态。 */
+function collapse() {
+  sourceGeneration++;
+  openChunkId.value = '';
+  source.value = undefined;
+  sourceNotice.value = '';
+}
+/**
+ * 答不上来时给出明确去向，而不是让用户对着“仅原文摘录”猜下一步。
+ * 只有服务端真的判定超范围才说“不属于学校业务”；本地检索模式下没命中资料属于
+ * “校内资料没有覆盖”，不能替用户下范围结论，两种措辞必须分开。
+ */
+function redirect(answer: KnowledgeAnswer): string {
+  const statuses = answer.parts.map(part => part.status);
+  if (statuses.includes('OUT_OF_SCOPE'))
+    return '这个问题不属于当前学校的业务范围，校内资料里不会有答案。可自行前往公开联网问答；那里只切换页面，不携带当前问题、学校原文或会话历史，请勿输入内部信息。';
+  if (statuses.includes('SCOPE_UNKNOWN'))
+    return '暂时判断不了这属于哪一项校内业务，所以没有给出制度结论。可以补上具体的校内对象再问一次；如果本来就是校外的公开信息，请到公开联网问答。';
+  if (statuses.includes('EVIDENCE_ONLY') || statuses.includes('NO_EVIDENCE'))
+    return '现有校内资料里没有能直接回答这个问题的内容。如果是校外的公开信息（活动、新闻、通用常识），请到公开联网问答；如果确实是校内事务，可以换个说法再问，或反馈让知识负责人补充资料。';
+  return '';
 }
 onMounted(async () => {
   try {
@@ -461,6 +489,11 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
                       </ul>
                     </section>
 
+                    <div v-if="redirect(card.answer)" class="answer-scope-switch">
+                      <p>{{ redirect(card.answer) }}</p>
+                      <button type="button" @click="emit('general')">前往公开联网问答</button>
+                    </div>
+
                     <details v-if="card.answer.evidence.length" class="answer-evidence">
                       <summary>查看 {{ card.answer.evidence.length }} 条命中原文（命中不等于答案充分）</summary>
                       <div v-for="item in card.answer.evidence" :key="item.chunkId">
@@ -468,11 +501,6 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
                         <pre>{{ item.content }}</pre>
                       </div>
                     </details>
-
-                    <div v-if="card.answer.parts.some(part => part.status === 'OUT_OF_SCOPE')" class="answer-scope-switch">
-                      <p>校外问题可自行前往公开联网问答。仅切换页面，不携带当前问题、学校原文或会话历史；请勿在那里输入内部信息。</p>
-                      <button type="button" @click="emit('general')">前往公开联网问答</button>
-                    </div>
                   </template>
 
                   <p v-if="card.message && (!card.answer || card.feedbackSaved)" class="answer-caption" role="status">{{ card.message }}</p>
@@ -517,7 +545,12 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
       <aside class="answer-sidecar">
         <div class="source-heading"><AppIcon name="layers" :size="17" /><strong>答案背后的依据</strong><span>可追溯</span></div>
 
-        <aside v-if="sourceNotice" class="source-view" aria-label="当前引用原文">
+        <!-- 展开的原文独立在列表上方并可收起：不挡住其它引用，随时能继续核对下一条。 -->
+        <aside v-if="openChunkId" class="source-view" aria-label="当前引用原文">
+          <header class="source-view-head">
+            <span>原文核对</span>
+            <button type="button" class="source-collapse" @click="collapse">收起</button>
+          </header>
           <p role="status">{{ sourceNotice }}</p>
           <template v-if="source">
             <h3>{{ source.title }} · v{{ source.versionNo }}</h3>
@@ -530,9 +563,10 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
           </template>
         </aside>
 
-        <div v-else-if="recentEvidence.length" class="source-list">
-          <p class="source-list-hint">本次回答引用的原文，点开可在上方核对完整片段。</p>
-          <button v-for="item in recentEvidence" :key="item.chunkId" type="button" class="source-item" @click="inspect(item)">
+        <div v-if="recentEvidence.length" class="source-list">
+          <p class="source-list-hint">本次回答引用的原文；点一条展开核对，再点一次收起。</p>
+          <button v-for="item in recentEvidence" :key="item.chunkId" type="button" class="source-item"
+            :class="{ open: openChunkId === item.chunkId }" :aria-expanded="openChunkId === item.chunkId" @click="inspect(item)">
             <span class="source-item-head">
               <strong>{{ item.title }}</strong>
               <small>v{{ item.versionNo }}</small>
@@ -542,7 +576,7 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
           </button>
         </div>
 
-        <div v-else class="source-placeholder">
+        <div v-else-if="!openChunkId" class="source-placeholder">
           <div class="source-art"><AppIcon name="file" :size="34" /><span><AppIcon name="check" :size="13" /></span></div>
           <h3>每一个结论，<br />都有迹可循。</h3>
           <p>点击回答中的引用，在这里核对原文、版本和位置。</p>
@@ -1328,6 +1362,8 @@ textarea {
   box-shadow: var(--sh-xs);
 }
 .source-item:hover:not(:disabled) { border-color: var(--brand-200); background: var(--n-0); box-shadow: var(--sh-sm); }
+/* 正在核对的那一条保持高亮，方便对着上方的原文看是哪一段。 */
+.source-item.open { border-color: var(--brand-200); background: var(--brand-50); }
 .source-item-head { display: flex; align-items: baseline; gap: 6px; }
 .source-item-head strong {
   font-size: var(--fs-2xs);
@@ -1385,6 +1421,27 @@ textarea {
 .source-principle small { display: block; font-size: var(--fs-2xs); color: var(--text-placeholder); margin-top: 2px; line-height: var(--lh-snug); }
 
 .source-view { margin-top: var(--sp-4); }
+/* 展开的原文要有一个显眼的退出入口，否则长原文占满整栏就回不到列表。 */
+.source-view-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.source-collapse {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: var(--border-subtle);
+  border-radius: var(--r-full);
+}
+.source-collapse:hover:not(:disabled) { color: var(--brand-700); border-color: var(--brand-200); }
 .source-view h3 { font-size: var(--fs-sm); overflow-wrap: anywhere; font-weight: var(--fw-semibold); }
 .source-view > small { display: block; margin: 4px 0 8px; font-size: 10px; color: var(--text-placeholder); }
 .source-view pre { max-height: 380px; overflow: auto; }

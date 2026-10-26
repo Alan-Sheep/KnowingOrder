@@ -114,7 +114,8 @@ try {
       else if (/answers\/retrieval-mode$/.test(path)) payload = { code: 0, data: 'HYBRID' };
       else if (/\/workspace\/chats$/.test(path)) payload = chats;
       else if (/\/workspace\/chats\/[0-9a-f-]{36}$/.test(path)) payload = { code: 0, data: [job] };
-      else if (/\/answers\/evidence\/\d+$/.test(path)) payload = { code: 0, data: evidence };
+      // 按片段编号返回对应原文：切换引用时要验证换的是不是另一段。
+      else if (/\/answers\/evidence\/\d+$/.test(path)) payload = { code: 0, data: path.endsWith('/102') ? evidence2 : evidence };
       cdp('Fetch.fulfillRequest', { requestId: value.params.requestId, responseCode: 200,
         responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
         body: Buffer.from(JSON.stringify(payload)).toString('base64') }).catch(() => {});
@@ -198,6 +199,28 @@ try {
   const source = await evaluate(`document.querySelector('.source-view').textContent`);
   assert.ok(source.includes('差旅费用管理办法') && source.includes('第22—27行'), '依据栏缺少标题或行号');
   await shot('02-source-view');
+
+  // ④b 展开后引用列表必须还在，并且能收起——否则第一条长原文会把整栏占住，看不到别的引用。
+  const railAfterOpen = await evaluate(`({
+    list: document.querySelectorAll('.source-item').length,
+    open: document.querySelectorAll('.source-item.open').length,
+    collapse: !!document.querySelector('.source-collapse')
+  })`);
+  assert.equal(railAfterOpen.list, 2, `展开原文后引用列表不应消失，实际 ${railAfterOpen.list} 条`);
+  assert.equal(railAfterOpen.open, 1, '应当只有点开的那一条处于展开态');
+  assert.ok(railAfterOpen.collapse, '展开原文后缺少收起入口');
+
+  await evaluate(`document.querySelector('.source-collapse')?.click()`);
+  await wait(`document.querySelector('.source-view') === null`, '收起后回到引用列表');
+  assert.equal(await evaluate(`document.querySelectorAll('.source-item').length`), 2, '收起后引用列表应保持可见');
+  await shot('02b-source-collapsed');
+
+  // ④c 收起后能继续核对下一条，且换条不会残留上一条的内容。
+  await evaluate(`document.querySelectorAll('.source-item')[1]?.click()`);
+  await wait(`document.querySelector('.source-view pre') !== null`, '第二条引用原文视图');
+  const second = await evaluate(`document.querySelector('.source-view').textContent`);
+  assert.ok(second.includes('第28—29行'), `切换引用后没有显示对应原文：${second.slice(0, 80)}`);
+  assert.equal(await evaluate(`document.querySelectorAll('.source-item').length`), 2, '核对第二条时列表仍应可见');
 
   // ⑤ 命中原文可展开，且不会把输入框挤出视口。
   await evaluate(`document.querySelector('.answer-evidence')?.setAttribute('open', '')`);
