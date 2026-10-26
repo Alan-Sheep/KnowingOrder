@@ -20,7 +20,7 @@
 知序是一个面向企业的**知识库问答与工作协同平台**：员工用自然语言提问，系统在**其获授权范围内**检索企业知识库，由大模型生成**口语化、带引用标注**的回答——每个结论都能点回原文出处，宁可说"资料里没有"，也不编造答案。
 
 <div align="center">
-<img src="docs/screenshots/06-answer-result.png" width="880" alt="企业知识问答：口语化回答与引用溯源"/>
+<img src="assets/screenshots/06-answer-result.png" width="880" alt="企业知识问答：口语化回答与引用溯源"/>
 <p><sub>企业问答：跨空间检索 → 模型生成口语化回答 → 引用可溯源、结论经复核</sub></p>
 </div>
 
@@ -40,16 +40,16 @@
 
 | 工作台 | 知识空间 |
 |---|---|
-| ![工作台](docs/screenshots/04-workbench.png) | ![知识空间](docs/screenshots/03-knowledge-spaces.png) |
+| ![工作台](assets/screenshots/04-workbench.png) | ![知识空间](assets/screenshots/03-knowledge-spaces.png) |
 | **联网问答体验** | **员工事务** |
-| ![联网问答体验](docs/screenshots/08-public-chat.png) | ![员工事务](docs/screenshots/07-affairs.png) |
+| ![联网问答体验](assets/screenshots/08-public-chat.png) | ![员工事务](assets/screenshots/07-affairs.png) |
 
 <details>
 <summary><b>更多截图</b></summary>
 
 | 访客首页 | 登录 | 企业问答欢迎页 |
 |---|---|---|
-| ![访客首页](docs/screenshots/01-home-guest.png) | ![登录](docs/screenshots/02-login.png) | ![欢迎页](docs/screenshots/05-answer-welcome.png) |
+| ![访客首页](assets/screenshots/01-home-guest.png) | ![登录](assets/screenshots/02-login.png) | ![欢迎页](assets/screenshots/05-answer-welcome.png) |
 
 </details>
 
