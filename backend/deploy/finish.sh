@@ -194,15 +194,20 @@ fi
 IP=$(curl -s --max-time 3 http://100.100.100.200/latest/meta-data/eipv4 2>/dev/null || true)
 [ -n "${IP:-}" ] || IP="<你的公网IP>"
 
+# 演示口令不硬编码：直接取种子脚本声明值，避免文档与数据不一致
+DEMO_PW=$(grep -oE '口令统一为[^（]*' /tmp/sql/demo/20261025_seed_demo_data.sql 2>/dev/null \
+          | head -1 | sed 's/口令统一为//;s/[[:space:]]//g')
+[ -n "${DEMO_PW:-}" ] || DEMO_PW="见种子脚本第 3 行"
+
 cat <<EOF
 
 ------------------------------------------------------------------
 部署完成，访问：http://${IP}:8090
 
   管理员      ${ADMIN_USER} / ${ADMIN_PASS}
-  演示管理员  zhixuadmin / Demo@2026
-  演示财务    zhixufinance / Demo@2026
-  普通员工    chenzihan 等 100 个 / Demo@2026
+  演示管理员  zhixuadmin / ${DEMO_PW}
+  演示财务    zhixufinance / ${DEMO_PW}
+  普通员工    chenzihan 等 100 个 / ${DEMO_PW}
 
   数据库口令  /root/.dbpass（chmod 600）
   应用账号    ${DB_USER}@127.0.0.1
