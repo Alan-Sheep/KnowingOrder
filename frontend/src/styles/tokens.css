@@ -1,0 +1,185 @@
+/*
+ * 知序 · 设计令牌
+ * 单一事实来源：颜色、字号、间距、圆角、阴影、动效都从这里取值。
+ * 页面组件只允许消费变量，不再硬编码色值。
+ */
+
+:root {
+  /* ---------- 字体 ---------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "HarmonyOS Sans SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  /* ---------- 中性色（暖灰，带极淡绿相）---------- */
+  /* n-400 起为文字色，白底对比度均 ≥ 4.5:1；n-300 及更浅仅用于边框与装饰 */
+  --n-0: #ffffff;
+  --n-25: #fdfefc;
+  --n-50: #f7f9f6;
+  --n-100: #eff2ed;
+  --n-150: #e6eae3;
+  --n-200: #dbe0d7;
+  --n-250: #c9d0c4;
+  --n-300: #adb6a8;
+  --n-400: #6d7869;
+  --n-500: #626d5f;
+  --n-600: #4f5a4b;
+  --n-700: #3d4739;
+  --n-800: #2c342c;
+  --n-900: #1a211a;
+
+  /* ---------- 品牌绿 ---------- */
+  --brand-50: #eef6f1;
+  --brand-100: #d9ece2;
+  --brand-200: #b3d8c6;
+  --brand-300: #86bda4;
+  --brand-400: #559c80;
+  --brand-500: #2f7f62;
+  --brand-600: #226349;
+  --brand-700: #194e39;
+  --brand-800: #123a2b;
+  --brand-900: #0b271d;
+
+  /* ---------- 辅助色（打破单色相单调）---------- */
+  --amber-400: #cfa25c;
+  --amber-500: #b8863b;
+  --amber-600: #96692a;
+  --amber-soft: #faf3e4;
+  --blue-400: #6ba3c4;
+  --blue-500: #3c7ba3;
+  --blue-600: #2c6083;
+  --blue-soft: #eaf2f7;
+  --rose-400: #c97d6d;
+  --rose-500: #b55a48;
+  --rose-600: #964636;
+  --rose-soft: #fbeeea;
+  --violet-500: #7a6bb0;
+  --violet-soft: #f0edf8;
+
+  /* ---------- 语义色 ---------- */
+  --success: var(--brand-500);
+  --success-fg: var(--brand-600);
+  --success-soft: var(--brand-50);
+  --success-border: var(--brand-200);
+  --warning: var(--amber-500);
+  --warning-fg: var(--amber-600);
+  --warning-soft: var(--amber-soft);
+  --warning-border: #efdfc0;
+  --danger: #b04a3a;
+  --danger-fg: #964636;
+  --danger-soft: var(--rose-soft);
+  --danger-border: #f0dad3;
+  --info: var(--blue-500);
+  --info-fg: var(--blue-600);
+  --info-soft: var(--blue-soft);
+  --info-border: #d3e4ee;
+
+  /* ---------- 语义化表面 ---------- */
+  /* 画布比表面深一档，白色卡片才能靠明度差浮起，而不是靠描边 */
+  --bg-app: #f1f4ef;
+  --bg-surface: var(--n-0);
+  --bg-subtle: var(--n-100);
+  --bg-raised: var(--n-25);
+  --bg-hover: var(--n-100);
+  --bg-active: var(--brand-50);
+
+  --text-primary: var(--n-800);
+  --text-secondary: var(--n-600);
+  --text-tertiary: var(--n-500);
+  --text-placeholder: var(--n-400);
+  --text-inverse: #f4f9f5;
+  --text-brand: var(--brand-600);
+
+  --border-subtle: var(--n-150);
+  --border-default: var(--n-200);
+  --border-strong: var(--n-300);
+  --border-brand: var(--brand-200);
+
+  /* ---------- 字号阶梯（最小 11px，正文 14-15px）---------- */
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 20px;
+  --fs-2xl: 24px;
+  --fs-3xl: 30px;
+  --fs-4xl: 38px;
+  --fs-5xl: 48px;
+
+  /* ---------- 行高 ---------- */
+  --lh-tight: 1.3;
+  --lh-snug: 1.5;
+  --lh-base: 1.7;
+  --lh-relaxed: 1.9;
+
+  /* ---------- 字重 ---------- */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 650;
+
+  /* ---------- 间距（4px 基数）---------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 28px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-24: 96px;
+
+  /* ---------- 圆角 ---------- */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-2xl: 30px;
+  --r-full: 999px;
+
+  /* ---------- 阴影（建立 elevation 层次）---------- */
+  --sh-xs: 0 1px 2px rgba(26, 33, 26, .05);
+  --sh-sm: 0 1px 3px rgba(26, 33, 26, .06), 0 1px 2px rgba(26, 33, 26, .04);
+  --sh-md: 0 4px 10px -2px rgba(26, 33, 26, .07), 0 2px 4px -2px rgba(26, 33, 26, .04);
+  --sh-lg: 0 12px 26px -8px rgba(26, 33, 26, .11), 0 4px 10px -6px rgba(26, 33, 26, .06);
+  --sh-xl: 0 26px 60px -20px rgba(26, 33, 26, .18);
+  --sh-inset-top: inset 0 1px 0 rgba(255, 255, 255, .65);
+  --ring: 0 0 0 3px rgba(47, 127, 98, .16);
+  --ring-danger: 0 0 0 3px rgba(176, 74, 58, .16);
+
+  /* ---------- 深色焦点块（全站统一的强调语言）---------- */
+  --focus-block: linear-gradient(135deg, #0b271d 0%, #123a2b 42%, #194e39 100%);
+  --focus-block-glow: radial-gradient(ellipse 70% 110% at 88% 8%,
+      rgba(134, 189, 164, .30) 0%, rgba(134, 189, 164, 0) 62%);
+  --focus-block-text: #f2f8f4;
+  --focus-block-muted: rgba(226, 240, 232, .74);
+  --focus-block-border: rgba(255, 255, 255, .12);
+
+  /* ---------- 动效 ---------- */
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --dur-4: 480ms;
+
+  /* ---------- 布局 ---------- */
+  --sidebar-w: 256px;
+  --topbar-h: 68px;
+  --content-max: 1320px;
+  --z-scrim: 40;
+  --z-sidebar: 50;
+  --z-toast: 80;
+}
+
+/* 极窄屏下压缩侧栏，避免内容区被挤扁 */
+@media (max-width: 1180px) {
+  :root { --sidebar-w: 228px; }
+}
