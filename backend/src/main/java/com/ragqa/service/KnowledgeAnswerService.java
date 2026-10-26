@@ -3,6 +3,7 @@ package com.ragqa.service;
 import com.ragqa.common.ResultCode;
 import com.ragqa.domain.dto.AuthenticatedUserPrincipal;
 import com.ragqa.domain.dto.EnterpriseMemberContext;
+import com.ragqa.domain.dto.EnterpriseResources;
 import com.ragqa.domain.dto.KnowledgeAnswers.*;
 import com.ragqa.exception.BusinessException;
 import com.ragqa.rag.chat.KnowledgeAnswerComposer;
@@ -25,6 +26,8 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Set;
@@ -258,6 +261,8 @@ public class KnowledgeAnswerService {
                 status = scopeStatus(parts);
                 message = "虚构资料模型验收：已加入结论依据复核，模型复核仍可能误判，请结合引用核对；未通过的结论不展示。";
             } catch (BusinessException error) {
+                log.warn("{\"event\":\"knowledge_compose_failed\",\"reason\":\"{}\"}",
+                        error.getMessage() == null ? "unknown" : error.getMessage());
                 status = "MODEL_UNAVAILABLE";
                 message = "模型调用或回答格式校验未完成，未自动重试。可先核对下方原文，不能将其当作已生成答案。";
                 parts = List.of(new Part(1, question, status, List.of(), List.of("模型未能提供通过校验的回答。")));
@@ -269,6 +274,206 @@ public class KnowledgeAnswerService {
         log.info("{\"event\":\"knowledge_answer_completed\",\"mode\":\"{}\",\"status\":\"{}\",\"evidence_count\":{},\"elapsed_ms\":{}}",
                 mode, status, evidence.size(), elapsed);
         return new Answer(mode, status, message, parts, evidence, elapsed);
+    }
+
+    /** 跨空间回答要合并多空间检索并调用两次模型（生成+复核），预算放宽到60秒。 */
+    private static final Duration CROSS_TIMEOUT = Duration.ofSeconds(60);
+
+    /**
+     * 跨空间回答：一次问题检索当前账号全部授权空间，全局排序合并证据后统一作答。
+     * 不做业务范围分类与话题关联（均为单空间特性），每问独立；最终入选证据的来源空间均须获外发许可，
+     * 未入选候选不影响许可判断。单个空间检索失败不拖垮整体，全部失败才向上报错。
+     */
+    public CrossAnswer answerAcross(AuthenticatedUserPrincipal user, Long enterpriseId, String question) {
+        return answerAcrossWithin(user, enterpriseId, question, TaskDeadline.start(CROSS_TIMEOUT));
+    }
+
+    public CrossAnswer answerAcrossWithin(AuthenticatedUserPrincipal user, Long enterpriseId, String question,
+            TaskDeadline deadline) {
+        if (question == null || question.isBlank() || question.length() > 1200
+                || question.chars().anyMatch(c -> Character.isISOControl(c) && c != '\n' && c != '\r' && c != '\t'))
+            throw new BusinessException(ResultCode.PARAM_ERROR, "请填写1至1200个字符的问题");
+        deadline.timeoutFor(timeout);
+        String requestId = MDC.get("request_id");
+        Future<CrossAnswer> future;
+        try {
+            future = executor.submit(() -> {
+                if (requestId != null) MDC.put("request_id", requestId);
+                try { return executeAcross(user, enterpriseId, question.strip(), deadline); }
+                finally { MDC.remove("request_id"); }
+            });
+        } catch (RejectedExecutionException error) {
+            throw new BusinessException(ResultCode.SERVICE_BUSY, "回答通道已满，请稍后手动重试");
+        }
+        try {
+            return future.get(Math.max(1, deadline.remaining().toNanos()), TimeUnit.NANOSECONDS);
+        } catch (TimeoutException error) {
+            future.cancel(true);
+            throw new BusinessException(ResultCode.PROCESS_TIMEOUT, "本次回答超过60秒，已停止等待；不会自动重复调用模型");
+        } catch (InterruptedException error) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ResultCode.SERVICE_BUSY, "回答连接已结束，请稍后核对再重试");
+        } catch (ExecutionException error) {
+            if (error.getCause() instanceof BusinessException business) throw business;
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "企业知识服务暂不可用，请联系管理员核对请求编号");
+        }
+    }
+
+    private CrossAnswer executeAcross(AuthenticatedUserPrincipal user, Long enterpriseId, String question,
+            TaskDeadline deadline) {
+        EnterpriseMemberContext member = members.requireMember(user, enterpriseId);
+        List<EnterpriseResources.KnowledgeSpace> spaces = resources.listSpaces(member, 1L, 500L).getRecords();
+        if (spaces.isEmpty()) throw new BusinessException(ResultCode.PARAM_ERROR, "当前账号没有可问答的授权知识空间");
+        // 每个空间独立检索并记录名次；轮转合并保证多空间机会均等，总量以9段为上限：
+        // 6个授权空间各取第1名后仍有余量，让强相关空间（如同一问题命中多篇指南）的第2名也能进入证据，
+        // 否则真答案排在空间内第2名时永远进不了模型上下文。
+        var perSpace = new ArrayList<List<Evidence>>();
+        BusinessException firstFailure = null;
+        int searched = 0;
+        for (EnterpriseResources.KnowledgeSpace space : spaces) {
+            try {
+                perSpace.add(retriever.retrieve(member, space.id(), question, deadline));
+                searched++;
+            } catch (BusinessException error) {
+                perSpace.add(List.of());
+                if (firstFailure == null) firstFailure = error;
+            }
+        }
+        if (searched == 0 && firstFailure != null) throw firstFailure;
+        // 跨空间全局重排取代名次轮转：各空间内部名次无法跨空间比较，且"校园"这类语料高频词
+        // 会让真正讲办理步骤的文档输给在负面语境里顺带提到关键词的文档。对全部候选用 tf-idf
+        // 重算相关度（df 取自本次候选集：高频词自动降权、词频与标题命中加权），总量9段、
+        // 每空间最多2条，兼顾"问题集中在一个空间"与跨空间覆盖。
+        var ordered = mergeAcross(perSpace, question, 9, 2);
+        var spaceByChunk = new HashMap<Long, Long>();
+        for (int index = 0; index < perSpace.size(); index++)
+            for (Evidence item : perSpace.get(index)) spaceByChunk.putIfAbsent(item.chunkId(), spaces.get(index).id());
+        var nameBySpace = new HashMap<Long, String>();
+        for (EnterpriseResources.KnowledgeSpace space : spaces) nameBySpace.put(space.id(), space.name());
+        List<SpaceEvidence> evidence = ordered.stream().map(item -> {
+            Long spaceId = spaceByChunk.get(item.chunkId());
+            return new SpaceEvidence(spaceId, nameBySpace.get(spaceId), item);
+        }).toList();
+        // 外发许可按"实际命中证据的空间"判定：空空间（无发布版本、无内容）不会产生证据，
+        // 不应拖垮整个回答；只要有任一未许可空间的证据参与，整体仍降级为仅原文摘录。
+        Set<Long> hitSpaceIds = evidence.stream().map(SpaceEvidence::spaceId).collect(Collectors.toSet());
+        String mode = !hitSpaceIds.isEmpty() && hitSpaceIds.stream()
+                .allMatch(id -> syntheticSpaces.contains(member.enterpriseId() + ":" + id))
+                ? "SYNTHETIC_MODEL" : "LOCAL_EVIDENCE";
+        String status;
+        String message;
+        List<Part> parts;
+        if (evidence.isEmpty()) {
+            status = "NO_EVIDENCE";
+            message = "已检索" + searched + "个授权空间，均未命中有效依据；这不代表公司没有相关规定，请联系知识负责人补充资料。";
+            parts = List.of(new Part(1, question, status, List.of(), List.of("全部授权空间的检索都没有命中，可换用资料中的原文关键词。")));
+        } else if (mode.equals("LOCAL_EVIDENCE")) {
+            status = "EVIDENCE_ONLY";
+            boolean partiallyAllowed = hitSpaceIds.stream()
+                    .anyMatch(id -> syntheticSpaces.contains(member.enterpriseId() + ":" + id));
+            message = partiallyAllowed
+                    ? "已找到相关原文，仅供核对；命中结果里有未获模型外发许可的空间，本次未生成最终答案。"
+                    : "已找到相关原文，仅供核对；当前环境未启用模型改写，本次仅提供原文摘录。";
+            parts = List.of(new Part(1, question, status, List.of(), List.of("请阅读下方原文；检索命中不等于答案充分。")));
+        } else {
+            revalidateAcross(member, evidence, deadline);
+            try {
+                parts = composer.compose(question, ordered, deadline);
+                revalidateAcross(member, evidence, deadline);
+                parts = composer.review(question, parts, deadline);
+                revalidateAcross(member, evidence, deadline);
+                status = scopeStatus(parts);
+                message = "虚构资料模型验收：已加入结论依据复核，模型复核仍可能误判，请结合引用核对；未通过的结论不展示。";
+            } catch (BusinessException error) {
+                log.warn("{\"event\":\"knowledge_cross_compose_failed\",\"reason\":\"{}\"}",
+                        error.getMessage() == null ? "unknown" : error.getMessage());
+                status = "MODEL_UNAVAILABLE";
+                message = "模型调用或回答格式校验未完成，未自动重试。可先核对下方原文，不能将其当作已生成答案。";
+                parts = List.of(new Part(1, question, status, List.of(), List.of("模型未能提供通过校验的回答。")));
+            }
+        }
+        if (!evidence.isEmpty()) revalidateAcross(member, evidence, deadline);
+        long elapsed = elapsed(deadline);
+        log.info("{\"event\":\"knowledge_cross_answer_completed\",\"mode\":\"{}\",\"status\":\"{}\",\"spaces\":{},"
+                        + "\"evidence_count\":{},\"elapsed_ms\":{}}",
+                mode, status, spaces.size(), evidence.size(), elapsed);
+        return new CrossAnswer(mode, status, message, parts, evidence, elapsed);
+    }
+
+    /**
+     * 跨空间候选合并：tf-idf 全局重排后取前 cap 条，每空间最多 perSpaceLimit 条。
+     * 得分 = Σ 词频(content + 2×标题命中) × ln(1 + 候选总数/含该词候选数)；df 在本次候选集内统计，
+     * 高频词（如"校园"）自动降权。平局回退到空间内名次与空间顺序，保证结果稳定可复现。
+     */
+    private static List<Evidence> mergeAcross(List<List<Evidence>> perSpace, String question, int cap, int perSpaceLimit) {
+        record Candidate(Evidence evidence, int spaceIndex, int rank, double score) {}
+        List<Candidate> all = new ArrayList<>();
+        for (int index = 0; index < perSpace.size(); index++) {
+            List<Evidence> list = perSpace.get(index);
+            for (int rank = 0; rank < list.size(); rank++) all.add(new Candidate(list.get(rank), index, rank, 0d));
+        }
+        if (all.isEmpty()) return List.of();
+        List<String> terms = KeywordKnowledgeRetriever.terms(question);
+        if (!terms.isEmpty()) {
+            var df = new HashMap<String, Integer>();
+            for (String term : terms) {
+                int count = 0;
+                for (Candidate candidate : all) {
+                    if (candidate.evidence().content().toLowerCase(java.util.Locale.ROOT).contains(term)
+                            || candidate.evidence().title().toLowerCase(java.util.Locale.ROOT).contains(term)) count++;
+                }
+                df.put(term, count);
+            }
+            var scored = new ArrayList<Candidate>(all.size());
+            for (Candidate candidate : all) {
+                double score = 0d;
+                for (String term : terms) {
+                    int idfBoost = df.get(term);
+                    if (idfBoost == 0) continue;
+                    double weight = Math.log(1d + (double) all.size() / idfBoost);
+                    score += weight * (occurrences(candidate.evidence().content(), term)
+                            + 2d * occurrences(candidate.evidence().title(), term));
+                }
+                scored.add(new Candidate(candidate.evidence(), candidate.spaceIndex(), candidate.rank(), score));
+            }
+            scored.sort((a, b) -> {
+                int byScore = Double.compare(b.score(), a.score());
+                if (byScore != 0) return byScore;
+                int byRank = Integer.compare(a.rank(), b.rank());
+                return byRank != 0 ? byRank : Integer.compare(a.spaceIndex(), b.spaceIndex());
+            });
+            all = scored;
+        }
+        var picked = new ArrayList<Evidence>();
+        var perSpaceCount = new HashMap<Integer, Integer>();
+        var seenChunks = new HashSet<Long>();
+        for (Candidate candidate : all) {
+            if (picked.size() == cap) break;
+            if (perSpaceCount.merge(candidate.spaceIndex(), 1, Integer::sum) > perSpaceLimit) continue;
+            if (!seenChunks.add(candidate.evidence().chunkId())) continue;
+            picked.add(candidate.evidence());
+        }
+        return picked;
+    }
+
+    private static int occurrences(String text, String term) {
+        String lower = text.toLowerCase(java.util.Locale.ROOT);
+        int count = 0;
+        for (int index = lower.indexOf(term); index >= 0; index = lower.indexOf(term, index + term.length())) count++;
+        return count;
+    }
+
+    /** 跨空间复核：每条证据按其来源空间重查比对；requireEvidence内部会再校验该空间的授权。 */
+    private void revalidateAcross(EnterpriseMemberContext member, List<SpaceEvidence> evidence, TaskDeadline deadline) {
+        deadline.timeoutFor(Duration.ofSeconds(2));
+        members.requireCurrent(member);
+        for (SpaceEvidence item : evidence) {
+            deadline.timeoutFor(Duration.ofSeconds(2));
+            if (!item.evidence().equals(retriever.requireEvidence(member, item.spaceId(), item.evidence().chunkId())))
+                throw new BusinessException(ResultCode.CONFLICT, "资料已更新，请重新查询，旧引用不会继续返回");
+        }
+        deadline.timeoutFor(Duration.ofSeconds(2));
     }
 
     private static long elapsed(TaskDeadline deadline) {

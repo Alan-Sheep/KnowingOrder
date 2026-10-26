@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from 'vue';
 import { createEnterpriseClient, EnterpriseError } from '../enterprise';
+import { t } from '../i18n';
 
 defineProps<{ disabled: boolean }>();
 const emit = defineEmits<{ changed: []; busy: [value: boolean] }>();
@@ -9,17 +10,17 @@ const previous = ref('');
 const replacement = ref('');
 const repeated = ref('');
 const busy = ref(false);
-const message = ref('改密后所有已有登录将失效，请使用新口令重新登录。');
+const message = ref(t('改密后所有已有登录将失效，请使用新口令重新登录。'));
 let mounted = true;
 async function submit() {
   if (busy.value) return;
-  if (replacement.value !== repeated.value) { message.value = '两次新口令不一致。'; return; }
+  if (replacement.value !== repeated.value) { message.value = t('两次新口令不一致。'); return; }
   busy.value = true; emit('busy', true);
   try {
     await api.changePassword(previous.value, replacement.value);
     if (mounted) emit('changed');
   } catch (error) {
-    if (mounted) message.value = error instanceof EnterpriseError ? error.message : '改密未完成，请重新登录核对。';
+    if (mounted) message.value = error instanceof EnterpriseError ? error.message : t('改密未完成，请重新登录核对。');
   } finally {
     previous.value = ''; replacement.value = ''; repeated.value = '';
     if (mounted) { busy.value = false; emit('busy', false); }
@@ -30,17 +31,17 @@ onUnmounted(() => { mounted = false; api.dispose(); previous.value = ''; replace
 
 <template>
   <details class="password-panel">
-    <summary>修改本人登录口令</summary>
-    <form aria-label="修改登录口令" @submit.prevent="submit">
-      <fieldset :disabled="disabled || busy"><legend>账号安全</legend>
-        <label>原口令<input v-model="previous" type="password" autocomplete="current-password" required maxlength="256" /></label>
-        <label>新口令<input v-model="replacement" type="password" autocomplete="new-password" required minlength="12" maxlength="72" /></label>
-        <label>再次输入新口令<input v-model="repeated" type="password" autocomplete="new-password" required minlength="12" maxlength="72" /></label>
-        <button type="submit">{{ busy ? '正在修改…' : '确认修改并退出登录' }}</button>
+    <summary>{{ t('修改本人登录口令') }}</summary>
+    <form :aria-label="t('修改登录口令')" @submit.prevent="submit">
+      <fieldset :disabled="disabled || busy"><legend>{{ t('账号安全') }}</legend>
+        <label>{{ t('原口令') }}<input v-model="previous" type="password" autocomplete="current-password" required maxlength="256" /></label>
+        <label>{{ t('新口令') }}<input v-model="replacement" type="password" autocomplete="new-password" required minlength="12" maxlength="72" /></label>
+        <label>{{ t('再次输入新口令') }}<input v-model="repeated" type="password" autocomplete="new-password" required minlength="12" maxlength="72" /></label>
+        <button type="submit">{{ busy ? t('正在修改…') : t('确认修改并退出登录') }}</button>
       </fieldset>
     </form>
     <p role="status">{{ message }}</p>
-    <small>不保存或回显口令；请求结果未知时先用新口令重新登录核对，不重复提交。</small>
+    <small>{{ t('不保存或回显口令；请求结果未知时先用新口令重新登录核对，不重复提交。') }}</small>
   </details>
 </template>
 

@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from 'vue';
 import { createEnterpriseClient } from '../enterprise';
+import { t } from '../i18n';
 import type { KnowledgeFeedback } from '../knowledge-workspace';
 const props = defineProps<{ enterpriseId: string; spaceId: string }>();
 const api = createEnterpriseClient();
 const entries = ref<KnowledgeFeedback[]>([]);
-const notice = ref('仅当前空间维护者可以读取和处理反馈；处理不会自动修改已发布制度。');
+const notice = ref(t('仅当前空间维护者可以读取和处理反馈；处理不会自动修改已发布制度。'));
 const resolution = ref<Record<string, string>>({});
 const busy = ref(false);
 let mounted = true;
 async function load() {
   if (busy.value) return;
   busy.value = true;
-  try { const result = await api.feedbacks(props.enterpriseId, props.spaceId); if (mounted) { entries.value = result; notice.value = result.length ? '请核对资料后填写处理说明。' : '当前没有反馈。'; } }
-  catch { if (mounted) { entries.value = []; notice.value = '反馈不可读取，请核对维护授权、登录状态和服务。'; } }
+  try { const result = await api.feedbacks(props.enterpriseId, props.spaceId); if (mounted) { entries.value = result; notice.value = t(result.length ? '请核对资料后填写处理说明。' : '当前没有反馈。'); } }
+  catch { if (mounted) { entries.value = []; notice.value = t('反馈不可读取，请核对维护授权、登录状态和服务。'); } }
   finally { if (mounted) busy.value = false; }
 }
 async function resolve(entry: KnowledgeFeedback, status: string) {
@@ -22,15 +23,15 @@ async function resolve(entry: KnowledgeFeedback, status: string) {
   try {
     await api.resolveFeedback(props.enterpriseId, props.spaceId, entry.id, entry.revision, status, resolution.value[entry.id]!);
     if (mounted) { busy.value = false; await load(); }
-  } catch { if (mounted) notice.value = '处理结果未确认，请重新读取核对；不会自动重复提交。'; }
+  } catch { if (mounted) notice.value = t('处理结果未确认，请重新读取核对；不会自动重复提交。'); }
   finally { if (mounted) busy.value = false; }
 }
 onUnmounted(() => { mounted = false; api.dispose(); });
 </script>
 <template>
-  <details class="feedback-governance"><summary>知识反馈处理 · 维护者</summary><p role="status">{{ notice }}</p><button :disabled="busy" @click="load">读取待办与处理记录</button>
-    <article v-for="entry in entries" :key="entry.id"><strong>{{ entry.category }} · {{ entry.status }}</strong><p>关联问题：{{ entry.question }}</p><p>{{ entry.commentText }}</p><small>关联任务 {{ entry.jobId }}<span v-if="entry.chunkId"> · 片段 {{ entry.chunkId }}</span></small>
-      <p v-if="entry.resolution">处理说明：{{ entry.resolution }}</p><template v-if="entry.status === 'OPEN'"><label>核验与处理说明<textarea v-model="resolution[entry.id]" maxlength="1000" rows="2" /></label><button :disabled="busy || !resolution[entry.id]?.trim()" @click="resolve(entry, 'RESOLVED')">标记已处理</button><button :disabled="busy || !resolution[entry.id]?.trim()" @click="resolve(entry, 'DISMISSED')">说明后关闭</button></template>
+  <details class="feedback-governance"><summary>{{ t('知识反馈处理 · 维护者') }}</summary><p role="status">{{ notice }}</p><button :disabled="busy" @click="load">{{ t('读取待办与处理记录') }}</button>
+    <article v-for="entry in entries" :key="entry.id"><strong>{{ entry.category }} · {{ entry.status }}</strong><p>{{ t('关联问题：') }}{{ entry.question }}</p><p>{{ entry.commentText }}</p><small>{{ t('关联任务') }} {{ entry.jobId }}<span v-if="entry.chunkId"> {{ t('· 片段') }} {{ entry.chunkId }}</span></small>
+      <p v-if="entry.resolution">{{ t('处理说明：') }}{{ entry.resolution }}</p><template v-if="entry.status === 'OPEN'"><label>{{ t('核验与处理说明') }}<textarea v-model="resolution[entry.id]" maxlength="1000" rows="2" /></label><button :disabled="busy || !resolution[entry.id]?.trim()" @click="resolve(entry, 'RESOLVED')">{{ t('标记已处理') }}</button><button :disabled="busy || !resolution[entry.id]?.trim()" @click="resolve(entry, 'DISMISSED')">{{ t('说明后关闭') }}</button></template>
     </article>
   </details>
 </template>

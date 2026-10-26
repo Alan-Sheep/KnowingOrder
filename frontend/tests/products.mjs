@@ -18,11 +18,32 @@ test('契约明确模拟来源，空结果合法，损坏和未知来源拒绝�
   }
 });
 
-test('跳转只允许固定HTTPS首页，不接受脚本、凭据、相似域名或任意路径', () => {
+test('跳转只允许淘宝首页或带单个q参数的搜索页，不接受脚本、凭据、相似域名或夹带参数', () => {
   assert.equal(productJumpUrl('https://www.taobao.com/'), 'https://www.taobao.com/');
+  // 搜索页：关键词允许百分号编码，结果与输入等价即可。
+  assert.equal(productJumpUrl('https://s.taobao.com/search?q=%E7%BE%8E%E5%BC%8F%E5%92%96%E5%95%A1'),
+    'https://s.taobao.com/search?q=%E7%BE%8E%E5%BC%8F%E5%92%96%E5%95%A1');
   for (const value of [null, 'javascript:alert(1)', '//www.taobao.com', 'http://www.taobao.com/',
     'https://www.taobao.com.evil.example/', 'https://secret@www.taobao.com/',
-    'https://www.taobao.com/redirect?url=https://evil.example']) assert.equal(productJumpUrl(value), undefined);
+    'https://www.taobao.com/redirect?url=https://evil.example',
+    'https://s.taobao.com.evil.example/search?q=%E5%92%96%E5%95%A1',
+    'http://s.taobao.com/search?q=%E5%92%96%E5%95%A1',
+    'https://s.taobao.com:8443/search?q=%E5%92%96%E5%95%A1',
+    'https://s.taobao.com/search?q=%E5%92%96%E5%95%A1&redirect=https://evil.example',
+    'https://s.taobao.com/search?q=%E5%92%96%E5%95%A1&q=%E5%A5%B6%E8%8C%B6',
+    'https://s.taobao.com/search?q=',
+    'https://s.taobao.com/search?q=%20%20',
+    'https://s.taobao.com/search?q=%E5%92%96%E5%95%A1#frag',
+    'https://s.taobao.com/item?q=%E5%92%96%E5%95%A1']) assert.equal(productJumpUrl(value), undefined);
+});
+
+test('linkType 必须与实际地址一致，不能文案说搜索、链接却回首页', () => {
+  const home = fixture().items[0];
+  assert.equal(validateProducts({ ...fixture(), items: [{ ...home, linkType: 'PLATFORM_SEARCH' }] }), false);
+  assert.equal(validateProducts({ ...fixture(), items: [{ ...home, linkType: 'PLATFORM_HOME',
+    jumpUrl: 'https://s.taobao.com/search?q=%E5%92%96%E5%95%A1' }] }), false);
+  assert.equal(validateProducts({ ...fixture(), items: [{ ...home, linkType: 'PLATFORM_SEARCH',
+    jumpUrl: 'https://s.taobao.com/search?q=%E5%92%96%E5%95%A1' }] }), true);
 });
 
 test('传递关键词、校验后端数据并且不自动重试', async () => {

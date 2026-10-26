@@ -11,6 +11,7 @@ import { setTimeout as delay } from 'node:timers/promises';
  * ② 企业问答未登录 → 点登录 → 知识空间 → 登录成功必须回到企业问答；
  * ③ 本来就在知识空间登录 → 不许被弹走；
  * ④ 登录失败不许回跳（否则用户会被弹回来源页又进不去）。
+ * ⑤ 企业问答跨页保留草稿、在途请求和结果，退出后隔离账号；空间详情从顶部进入。
  * 全程拦截接口，不访问真实后端。
  */
 const base = process.env.AUDIT_BASE ?? 'http://127.0.0.1:5173';
@@ -21,8 +22,16 @@ const width = Number(process.env.AUDIT_WIDTH ?? 1440);
 const height = Number(process.env.AUDIT_HEIGHT ?? 900);
 
 const account = { userId: '1', enterprises: [{ enterpriseId: '1', enterpriseName: '知序科技', role: 'ADMIN' }] };
-const spacePage = { code: 0, data: { records: [{ id: '1', name: '差旅报销与费用制度', permissionVersion: 5 }], total: 1, pageNum: 1, pageSize: 10, pages: 1 } };
+const spacePage = { code: 0, data: { records: Array.from({ length: 10 }, (_, index) => ({ id: String(index + 1), name: `校园办事指南 ${index + 1}`, permissionVersion: 5 })), total: 10, pageNum: 1, pageSize: 10, pages: 1 } };
 const pageOf = (records, total) => ({ code: 0, data: { records, total, pageNum: 1, pageSize: 20, pages: 1 } });
+const evidence = { chunkId: '101', documentId: '21', versionId: '35', versionNo: 1, title: '校园网账号指南', chunkIndex: 0,
+  content: '忘记校园网密码可通过统一身份平台重置。', startOffset: 0, endOffset: 21, startLine: 1, endLine: 1 };
+evidence.endOffset = evidence.content.length;
+const answerFor = question => ({ code: 0, data: { mode: 'SYNTHETIC_MODEL', status: 'ANSWERED', message: '已根据校园指南回答。', elapsedMs: 100,
+  evidence: [{ spaceId: '1', spaceName: '校园办事指南 1', evidence }],
+  parts: [{ id: 1, question, status: 'ANSWERED', gaps: [], paragraphs: [{ text: '请通过统一身份平台重置校园网密码。',
+    citations: [{ sourceId: 1, quote: evidence.content, evidence }] }] }] } });
+const heldAnswers = [];
 
 /** 登录态可切换：false 时 /auth/me 返回 401，模拟未登录访客。 */
 let loggedIn = false;
@@ -69,7 +78,15 @@ try {
       else payload = { code: 401, message: '账号或密码不正确' };
     }
     else if (path === '/api/auth/csrf') payload = { code: 0, data: { headerName: 'X-CSRF-TOKEN', token: 'csrf-login-return' } };
+    else if (path === '/api/auth/logout') loggedIn = false;
+    else if (/\/enterprises\/1\/answers$/.test(path)) {
+      heldAnswers.push({ requestId: message.params.requestId, payload: answerFor(JSON.parse(message.params.request.postData).question) });
+      return;
+    }
     else if (/\/knowledge-spaces$/.test(path)) payload = spacePage;
+    else if (/\/knowledge-spaces\/\d+$/.test(path)) payload = { code: 0, data: spacePage.data.records.find(space => path.endsWith('/' + space.id)) };
+    else if (/\/documents$/.test(path)) payload = pageOf([], 0);
+    else if (/\/grants$/.test(path)) payload = { code: 404, message: '资源不存在或不可访问' };
     else if (/\/affairs\/confirmations$/.test(path)) payload = pageOf([], 0);
     else if (/\/affairs\/applications$/.test(path)) payload = pageOf([], 0);
     else if (/\/workspace\/chats$/.test(path)) payload = { code: 0, data: [] };
@@ -192,7 +209,87 @@ try {
   await delay(300);
   await shot('06-login-failed-stays');
 
-  console.log('login-return-check 通过：工作台/企业问答登录后各自回流、原地登录不回跳、失败不回跳');
+  // ⑤ 延迟回答，验证切页不会中止请求或重新 POST。
+  loginResult = 'ok';
+  await submitLogin();
+  await wait(`document.querySelector('.breadcrumb strong')?.textContent.trim() === '企业问答'`, '恢复企业问答');
+  const navigate = async label => {
+    await evaluate(`document.querySelector('.mobile-menu')?.click()`);
+    await evaluate(`([...document.querySelectorAll('.primary-nav .nav-item')].find(node => node.textContent.trim() === ${JSON.stringify(label)})).click()`);
+    await wait(`document.querySelector('.breadcrumb strong')?.textContent.trim() === ${JSON.stringify(label)}`, label);
+  };
+  const fillQuestion = value => evaluate(`(() => { const input = document.querySelector('#knowledge-question'); input.value = ${JSON.stringify(value)}; input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  const submitQuestion = async value => {
+    await wait(`document.querySelector('#knowledge-question')?.disabled === false`, '问答可提交');
+    await fillQuestion(value);
+    await evaluate(`document.querySelector('.enterprise-composer').requestSubmit()`);
+  };
+  const releaseAnswer = async (cancelled = false) => {
+    const held = heldAnswers.shift();
+    assert.ok(held, '没有收到待返回的问答请求');
+    try {
+      await cdp('Fetch.fulfillRequest', { requestId: held.requestId, responseCode: 200,
+        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(held.payload)).toString('base64') });
+    } catch (error) { if (!cancelled) throw error; }
+  };
+  const waitForAnswerRequest = async () => {
+    for (let attempt = 0; attempt < 240 && !heldAnswers.length; attempt++) await delay(50);
+    assert.ok(heldAnswers.length, '等待问答请求超时');
+  };
+  await submitQuestion('校园网密码忘了怎么重置？');
+  await wait('document.querySelectorAll(".answer-progress").length === 1', '问答等待中');
+  await waitForAnswerRequest();
+  await fillQuestion('还没发送的校园事务问题');
+  await navigate('工作台');
+  await navigate('知识空间');
+  await navigate('联网问答体验');
+  await navigate('企业问答');
+  assert.equal(await evaluate('document.querySelectorAll(".answer-card").length'), 1, '切页丢失问题');
+  assert.equal(await evaluate('document.querySelectorAll(".answer-progress").length'), 1, '切页丢失在途请求');
+  assert.equal(await evaluate('document.querySelector("#knowledge-question").value'), '还没发送的校园事务问题', '切页丢失草稿');
+  await navigate('知识空间');
+  await releaseAnswer();
+  await navigate('企业问答');
+  await wait('document.querySelector(".answer-text")?.textContent.includes("统一身份平台")', '切页期间收到的回答');
+  assert.equal(requestLog.filter(path => path === '/api/enterprises/1/answers').length, 1, '切页重复提交问答');
+  await wait('document.querySelector(".composer-help")?.textContent.includes("Enter")', '完成后释放并发槽位');
+  await shot('07-answer-retained');
+
+  // ⑥ 在途退出后换账号，不显示旧问题、草稿或迟到的回答。
+  await submitQuestion('账号一尚未返回的问题');
+  await waitForAnswerRequest();
+  await navigate('知识空间');
+  await wait('document.querySelector(".account-line button")?.disabled === false', '可退出账号');
+  await click('退出登录');
+  await wait('document.querySelector(".account-form") !== null', '已退出');
+  await navigate('企业问答');
+  await wait('document.querySelector(".answer-login-state") !== null', '问答同步退出');
+  assert.equal(await evaluate('document.querySelectorAll(".answer-card").length'), 0, '退出后残留旧消息');
+  await click('登录并开始');
+  account.userId = '2';
+  await submitLogin();
+  await wait('document.querySelector("#knowledge-question")?.disabled === false', '新账号就绪');
+  await releaseAnswer(true);
+  await delay(1100);
+  assert.equal(await evaluate('document.querySelectorAll(".answer-card").length'), 0, '新账号收到旧账号回答');
+  assert.equal(await evaluate('document.querySelector("#knowledge-question").value'), '', '新账号看到旧草稿');
+
+  // ⑦ 实际滚动容器有滚动量，打开目录底部的空间后详情必须从顶部展示。
+  await navigate('知识空间');
+  await wait('document.querySelectorAll(".space-cards button:not(:disabled)").length === 10', '空间目录加载');
+  const beforeScroll = await evaluate(`(() => { const view = document.querySelector('.enterprise-workspace'); view.scrollTop = view.scrollHeight; return view.scrollTop; })()`);
+  assert.ok(beforeScroll > 100, '目录不足以复现滚动问题');
+  await evaluate(`document.querySelectorAll('.space-cards button')[9].click()`);
+  await wait('document.querySelector(".space-result h3")?.textContent === "校园办事指南 10"', '空间详情加载');
+  await wait('document.querySelector(".catalog-heading") !== null', '资料目录加载');
+  assert.equal(await evaluate('document.querySelector(".enterprise-workspace").scrollTop'), 0, '空间详情沿用目录底部滚动位置');
+  await shot('08-space-top');
+  await navigate('工作台');
+  await evaluate(`const view = document.querySelector('.enterprise-workspace'); view.scrollTop = view.scrollHeight;`);
+  await navigate('知识空间');
+  assert.equal(await evaluate('document.querySelector(".enterprise-workspace").scrollTop'), 0, '从其他页面进入知识空间没有归顶');
+
+  console.log('login-return-check 通过：4组登录回流、问答跨页保留且不重复提交、在途账号隔离、空间详情和页面滚动归顶');
 } finally {
   try { socket?.close(); } catch { /* 关闭失败不影响结论 */ }
   browser.kill();

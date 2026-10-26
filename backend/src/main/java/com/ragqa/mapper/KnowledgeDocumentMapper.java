@@ -14,8 +14,8 @@ import java.util.List;
 public interface KnowledgeDocumentMapper {
     String DOCUMENT_COLUMNS = "d.id,d.knowledge_space_id AS knowledgeSpaceId,d.title,d.owner_member_id AS ownerMemberId,"
             + "d.published_version_id AS publishedVersionId,d.revision";
-    // 只读查询补充负责人姓名；写入锁定查询不联表，避免无关行被 FOR UPDATE 一并锁定。
-    String OWNER_NAME = ",ou.username AS ownerMemberName";
+    // 只读查询补充负责人中文姓名；昵称为空才回退登录账号。写入锁定查询不联表，避免无关行被 FOR UPDATE 一并锁定。
+    String OWNER_NAME = ",COALESCE(NULLIF(TRIM(ou.nickname),''),ou.username) AS ownerMemberName";
     String OWNER_JOIN = " LEFT JOIN sys_enterprise_member om ON om.id = d.owner_member_id AND om.enterprise_id = d.enterprise_id"
             + " LEFT JOIN sys_user ou ON ou.id = om.user_id ";
     String LIVE = """

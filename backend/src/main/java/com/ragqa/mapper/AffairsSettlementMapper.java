@@ -20,6 +20,10 @@ import java.util.List;
 @Mapper
 public interface AffairsSettlementMapper {
 
+    /** 申请人、收款人一律展示中文姓名（昵称），昵称为空才回退登录账号。 */
+    String APPLICANT_NAME = "COALESCE(NULLIF(TRIM(au.nickname),''),au.username)";
+    String PAYEE_NAME = "COALESCE(NULLIF(TRIM(pu.nickname),''),pu.username)";
+
     /** 结算主记录中服务层需要的最小字段。 */
     record Settlement(long id, long enterpriseId, String applicationId, int applicationVersion, long amountCents,
             long payeeMemberId, String status, long revision) { }
@@ -140,7 +144,7 @@ public interface AffairsSettlementMapper {
             @Param("period") String period, @Param("amount") long amount, @Param("ms") long ms);
 
     @Select("SELECT s.id,s.application_id AS applicationId,r.name AS ruleName,s.amount_cents AS amountCents,"
-            + "s.payee_member_id AS payeeMemberId,pu.username AS payeeName,s.status,s.note,"
+            + "s.payee_member_id AS payeeMemberId," + PAYEE_NAME + " AS payeeName,s.status,s.note,"
             + "s.created_ms AS createdMs,s.approved_ms AS approvedMs,s.settled_ms AS settledMs "
             + "FROM rag_affair_settlement s "
             + "JOIN rag_affair_rule r ON r.id=s.rule_id "
@@ -153,8 +157,8 @@ public interface AffairsSettlementMapper {
             + "AND (#{status,jdbcType=VARCHAR} IS NULL OR s.status=#{status,jdbcType=VARCHAR})")
     long queueCount(@Param("enterprise") long enterprise, @Param("status") String status);
 
-    @Select("SELECT s.id,s.application_id AS applicationId,r.name AS ruleName,au.username AS applicantName,"
-            + "s.amount_cents AS amountCents,pu.username AS payeeName,s.status,s.created_ms AS createdMs "
+    @Select("SELECT s.id,s.application_id AS applicationId,r.name AS ruleName," + APPLICANT_NAME + " AS applicantName,"
+            + "s.amount_cents AS amountCents," + PAYEE_NAME + " AS payeeName,s.status,s.created_ms AS createdMs "
             + "FROM rag_affair_settlement s "
             + "JOIN rag_affair_application a ON a.id=s.application_id AND a.enterprise_id=#{enterprise} "
             + "JOIN rag_affair_rule r ON r.id=s.rule_id "
@@ -172,7 +176,7 @@ public interface AffairsSettlementMapper {
             + "AND (#{status,jdbcType=VARCHAR} IS NULL OR a.status=#{status,jdbcType=VARCHAR})")
     long financeCount(@Param("enterprise") long enterprise, @Param("status") String status);
 
-    @Select("SELECT a.id,r.name AS ruleName,au.username AS applicantName,a.amount_cents AS amountCents,"
+    @Select("SELECT a.id,r.name AS ruleName," + APPLICANT_NAME + " AS applicantName,a.amount_cents AS amountCents,"
             + "a.status,a.occurred_at AS occurredAt,a.created_ms AS createdMs,s.id AS settlementId,"
             + "s.status AS settlementStatus "
             + "FROM rag_affair_application a "

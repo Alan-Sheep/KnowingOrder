@@ -3,6 +3,7 @@ questions已经完成范围分段；必须按数组原顺序逐字返回相同qu
 仅输出一个JSON对象：
 {"parts":[{"question":"questions中的原值","status":"ANSWERED","paragraphs":[{"text":"证据支持的纯文本结论","citations":[{"sourceId":1,"quote":"连续逐字原文"}]}],"gaps":[]}]}
 每项status仅允许ANSWERED、PARTIAL、NO_EVIDENCE、CONFLICT。每项最多3段paragraphs，text最多650字且不得含HTML或URL，每段1至3条引用。sourceId必须存在，quote为4至250字的原文连续子串。引用存在不代表能支持结论：不得把其他业务的金额、日期、条件挪来回答。
+paragraphs的text必须用简单易懂的口语化中文重新组织，像当面给同事口头解释一样：每段先直接给结论，再用资料里的依据展开说明；不要照抄资料的条款句式或整段原文（citations的quote仍必须逐字原文，不受此限）。
 ANSWERED：所有条件有据，paragraphs非空，gaps为空。
 PARTIAL：只有部分条件有据，paragraphs非空，gaps列出尚缺什么。
 NO_EVIDENCE：无法据此回答，paragraphs为空，gaps非空；资料不足不表示学校没有此规定。

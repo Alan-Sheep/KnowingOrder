@@ -1,11 +1,22 @@
 <script setup lang="ts">
+import { computed, onActivated, ref, watch } from 'vue';
 import AppIcon from './AppIcon.vue';
 import KnowledgeSpacePanel from './KnowledgeSpacePanel.vue';
 import KnowledgeAnswerPanel from './KnowledgeAnswerPanel.vue';
 import AffairsPanel from './AffairsPanel.vue';
 import WorkbenchOverview from './WorkbenchOverview.vue';
+import { t } from '../i18n';
+import { useSession } from '../session';
 
-defineProps<{ page: 'home' | 'enterprise' | 'knowledge' | 'affairs'; loginReturnLabel?: string }>();
+const props = defineProps<{ page: 'home' | 'enterprise' | 'knowledge' | 'affairs'; loginReturnLabel?: string }>();
+const { user } = useSession();
+const viewport = ref<HTMLElement>();
+// 普通页面从顶部进入；问答由自己的对话流管理阅读位置。
+function resetPageScroll() {
+  if (props.page !== 'enterprise') viewport.value?.scrollTo({ top: 0, behavior: 'instant' });
+}
+watch(() => props.page, resetPageScroll, { flush: 'post' });
+onActivated(resetPageScroll);
 const emit = defineEmits<{
   navigate: [page: 'home' | 'enterprise' | 'knowledge' | 'affairs' | 'chat'];
   products: [];
@@ -15,47 +26,48 @@ const emit = defineEmits<{
   authenticated: [];
 }>();
 // 这里只展示已确定的信息架构，不生成企业文档、员工身份或业务记录。
-const spaces = [
-  { icon: 'chat', name: '向团队知识提问', description: '查制度、理流程，让复杂的问题有据可循', tag: '开始对话', tone: 'sage', page: 'enterprise' as const },
-  { icon: 'book', name: '整理与更新资料', description: '上传原件、核对版本，维护团队的知识资产', tag: '管理资料', tone: 'sand', page: 'knowledge' as const },
-  { icon: 'layers', name: '循着引用找依据', description: '从回答回到原文，核对结论、版本和适用条件', tag: '查看出处', tone: 'blue', page: 'enterprise' as const }
-];
+const spaces = computed(() => [
+  { icon: 'chat', name: t('向团队知识提问'), description: t('查制度、理流程，让复杂的问题有据可循'), tag: t('开始对话'), tone: 'sage', page: 'enterprise' as const },
+  { icon: 'book', name: t('整理与更新资料'), description: t('上传原件、核对版本，维护团队的知识资产'), tag: t('管理资料'), tone: 'sand', page: 'knowledge' as const },
+  { icon: 'layers', name: t('循着引用找依据'), description: t('从回答回到原文，核对结论、版本和适用条件'), tag: t('查看出处'), tone: 'blue', page: 'enterprise' as const }
+]);
 </script>
 
 <template>
-  <div class="enterprise-workspace" :data-page="page">
+  <div ref="viewport" class="enterprise-workspace" :data-page="page">
     <div v-if="page === 'home' || page === 'affairs'" class="workspace-page-heading">
-      <div><span class="section-kicker">KNOWINGORDER / WORKSPACE</span><h1>{{ page === 'home' ? '把知识，接到工作里。' : '员工事务' }}</h1></div>
-      <span class="workspace-stage"><AppIcon name="shield" :size="14" />企业知识 · 按权限可见</span>
+      <div><span class="section-kicker">KNOWINGORDER / WORKSPACE</span><h1>{{ page === 'home' ? t('把知识，接到工作里。') : t('员工事务') }}</h1></div>
+      <span class="workspace-stage"><AppIcon name="shield" :size="14" />{{ t('企业知识 · 按权限可见') }}</span>
     </div>
 
     <template v-if="page === 'home'">
       <section class="work-hero">
-        <div class="work-hero-copy"><span class="hero-label"><AppIcon name="sparkle" :size="15" />你的企业知识与工作助手</span><h2>读懂公司知识，<br />帮你把工作做好<span>。</span></h2><p>从了解一项制度，到理清一个业务流程。<br />让散落的知识，成为手边有依据的下一步。</p><div class="work-hero-actions"><button class="work-primary" @click="emit('navigate', 'enterprise')">进入企业问答<AppIcon name="chevron" :size="16" /></button><button class="work-secondary" @click="emit('navigate', 'knowledge')">浏览知识空间<AppIcon name="external" :size="14" /></button></div><small>仅检索账号获授权的已发布资料；企业原文默认不发送外部模型。</small></div>
-        <div class="knowledge-illustration" aria-hidden="true"><div class="knowledge-ring"></div><span class="illustration-label">FROM KNOWLEDGE TO ACTION</span><div class="knowledge-stack stack-back"></div><div class="knowledge-stack stack-front"><span class="document-symbol"><AppIcon name="book" :size="28" /></span><strong>一份知识，有序可循</strong><span class="document-line"></span><span class="document-line short"></span><div class="document-tags"><span>来源</span><span>版本</span><span>适用范围</span></div></div><div class="illustration-answer"><span><AppIcon name="sparkle" :size="17" />知序</span><strong>找到依据，再给出下一步。</strong><i></i><i class="short"></i></div><span class="illustration-dot"></span></div>
+        <div class="work-hero-copy"><span class="hero-label"><AppIcon name="sparkle" :size="15" />{{ t('你的企业知识与工作助手') }}</span><h2>{{ t('读懂公司知识，') }}<br />{{ t('帮你把工作做好') }}<span>{{ t('。') }}</span></h2><p>{{ t('从了解一项制度，到理清一个业务流程。') }}<br />{{ t('让散落的知识，成为手边有依据的下一步。') }}</p><div class="work-hero-actions"><button class="work-primary" @click="emit('navigate', 'enterprise')">{{ t('进入企业问答') }}<AppIcon name="chevron" :size="16" /></button><button class="work-secondary" @click="emit('navigate', 'knowledge')">{{ t('浏览知识空间') }}<AppIcon name="external" :size="14" /></button></div><small>{{ t('仅检索账号获授权的已发布资料；企业原文默认不发送外部模型。') }}</small></div>
+        <div class="knowledge-illustration" aria-hidden="true"><div class="knowledge-ring"></div><span class="illustration-label">FROM KNOWLEDGE TO ACTION</span><div class="knowledge-stack stack-back"></div><div class="knowledge-stack stack-front"><span class="document-symbol"><AppIcon name="book" :size="28" /></span><strong>{{ t('一份知识，有序可循') }}</strong><span class="document-line"></span><span class="document-line short"></span><div class="document-tags"><span>{{ t('来源') }}</span><span>{{ t('版本') }}</span><span>{{ t('适用范围') }}</span></div></div><div class="illustration-answer"><span><AppIcon name="sparkle" :size="17" />{{ t('知序') }}</span><strong>{{ t('找到依据，再给出下一步。') }}</strong><i></i><i class="short"></i></div><span class="illustration-dot"></span></div>
       </section>
 
       <WorkbenchOverview @navigate="emit('navigate', $event)" @login="emit('login')" />
 
       <div class="work-dashboard-grid">
-        <section class="work-section"><div class="work-section-heading"><div><span class="section-kicker">MAKE WORK FLOW</span><h2>你的工作捷径</h2></div><button @click="emit('navigate', 'knowledge')">打开知识空间<AppIcon name="chevron" :size="14" /></button></div><div class="knowledge-space-grid"><button v-for="space in spaces" :key="space.name" class="knowledge-space-card" @click="emit('navigate', space.page)"><span class="space-icon" :class="space.tone"><AppIcon :name="space.icon" :size="21" /></span><AppIcon class="space-template" name="chevron" :size="14" /><h3>{{ space.name }}</h3><p>{{ space.description }}</p><div><span>{{ space.tag }}</span><AppIcon name="chevron" :size="14" /></div></button></div><p class="work-caption">资料范围与可用操作，以当前账号的实际权限为准。</p></section>
-        <aside class="work-status-card"><span class="section-kicker">A LITTLE GUIDE</span><h2>一份资料，如何成为答案？</h2><ol class="work-guide"><li><span>01</span><div><strong>放进知识空间</strong><p>把制度、指南和经验有序归档。</p></div></li><li><span>02</span><div><strong>核对，再发布</strong><p>检查内容与权限，让有效版本可用。</p></div></li><li><span>03</span><div><strong>提问，也看出处</strong><p>带着问题来，循着引用找依据。</p></div></li></ol><div class="status-explanation"><AppIcon name="shield" :size="17" /><p>只使用你获授权的有效资料，资料不足时明确告诉你。</p></div></aside>
+        <section class="work-section"><div class="work-section-heading"><div><span class="section-kicker">MAKE WORK FLOW</span><h2>{{ t('你的工作捷径') }}</h2></div><button @click="emit('navigate', 'knowledge')">{{ t('打开知识空间') }}<AppIcon name="chevron" :size="14" /></button></div><div class="knowledge-space-grid"><button v-for="space in spaces" :key="space.name" class="knowledge-space-card" @click="emit('navigate', space.page)"><span class="space-icon" :class="space.tone"><AppIcon :name="space.icon" :size="21" /></span><AppIcon class="space-template" name="chevron" :size="14" /><h3>{{ space.name }}</h3><p>{{ space.description }}</p><div><span>{{ space.tag }}</span><AppIcon name="chevron" :size="14" /></div></button></div><p class="work-caption">{{ t('资料范围与可用操作，以当前账号的实际权限为准。') }}</p></section>
+        <aside class="work-status-card"><span class="section-kicker">A LITTLE GUIDE</span><h2>{{ t('一份资料，如何成为答案？') }}</h2><ol class="work-guide"><li><span>01</span><div><strong>{{ t('放进知识空间') }}</strong><p>{{ t('把制度、指南和经验有序归档。') }}</p></div></li><li><span>02</span><div><strong>{{ t('核对，再发布') }}</strong><p>{{ t('检查内容与权限，让有效版本可用。') }}</p></div></li><li><span>03</span><div><strong>{{ t('提问，也看出处') }}</strong><p>{{ t('带着问题来，循着引用找依据。') }}</p></div></li></ol><div class="status-explanation"><AppIcon name="shield" :size="17" /><p>{{ t('只使用你获授权的有效资料，资料不足时明确告诉你。') }}</p></div></aside>
       </div>
-      <section class="work-shortcuts"><button @click="emit('navigate', 'affairs')"><span class="shortcut-icon"><AppIcon name="briefcase" :size="22" /></span><span><strong>工作之外的小事，也有序安排</strong><small>商品查询演示 · 平台跳转 · 补贴协同规划</small></span><AppIcon name="chevron" :size="17" /></button><button @click="emit('navigate', 'chat')"><span class="shortcut-icon"><AppIcon name="globe" :size="22" /></span><span><strong>先体验一次有依据的回答</strong><small>独立的公开联网问答，不检索企业知识</small></span><AppIcon name="chevron" :size="17" /></button></section>
+      <section class="work-shortcuts"><button @click="emit('navigate', 'affairs')"><span class="shortcut-icon"><AppIcon name="briefcase" :size="22" /></span><span><strong>{{ t('工作之外的小事，也有序安排') }}</strong><small>{{ t('商品查询演示 · 平台跳转 · 补贴协同规划') }}</small></span><AppIcon name="chevron" :size="17" /></button><button @click="emit('navigate', 'chat')"><span class="shortcut-icon"><AppIcon name="globe" :size="22" /></span><span><strong>{{ t('先体验一次有依据的回答') }}</strong><small>{{ t('独立的公开联网问答，不检索企业知识') }}</small></span><AppIcon name="chevron" :size="17" /></button></section>
     </template>
 
-    <template v-else-if="page === 'enterprise'">
-      <KnowledgeAnswerPanel @manage="emit('navigate', 'knowledge')" @login="emit('login')" @general="emit('navigate', 'chat')" />
-    </template>
+    <!-- 只缓存问答；身份变化立即销毁旧缓存与在途请求，不保留其他账号的正文。 -->
+    <KeepAlive :key="user?.userId ?? 'anonymous'">
+      <KnowledgeAnswerPanel v-if="page === 'enterprise'" @manage="emit('navigate', 'knowledge')" @login="emit('login')" @general="emit('navigate', 'chat')" />
+    </KeepAlive>
 
-    <template v-else-if="page === 'knowledge'">
+    <template v-if="page === 'knowledge'">
       <KnowledgeSpacePanel :return-label="loginReturnLabel ?? ''" @authenticated="emit('authenticated')" />
     </template>
 
-    <template v-else>
-      <section class="affairs-banner"><div><span class="section-kicker">LESS FRICTION, MORE FOCUS</span><h2>少一点来回，多一点便利。</h2><p>把商品查询、凭证留存与补贴协同放在一起，让工作事务有迹可循。</p></div><AppIcon name="briefcase" :size="65" /></section><div class="affairs-grid affairs-grid-two"><article class="affair-card"><span class="space-icon sand"><AppIcon name="briefcase" :size="22" /></span><span class="planned-pill demo-pill">Mock · 可体验</span><h2>找商品，前往平台</h2><p>查询咖啡、奶茶和晚餐的模拟商品。当前跳转仅打开淘宝首页，由你在平台查询、下单与支付。</p><button class="work-primary" @click="emit('products')">商品查询<AppIcon name="external" :size="15" /></button></article><article class="affair-card"><span class="space-icon sage"><AppIcon name="file" :size="22" /></span><span class="planned-pill demo-pill">已接入</span><h2>凭证与补贴，参与与结算</h2><p>保存原始票据、多人确认分摊、主管批准与财务结算均已接入；不做 OCR，不把付款当作完成。</p><small class="affair-note">在下方直接办理；权限、版本与额度由服务端校验。</small></article></div><div class="affairs-panel-slot"><AffairsPanel /></div><div class="affairs-boundary"><AppIcon name="info" :size="19" /><p>补贴申请、参与确认与财务结算已接入；模拟商品查询仍仅演示，不创建订单、不代支付、不确认实际成交。凭证无法识别票据内容，需人工核对。</p></div>
+    <template v-else-if="page === 'affairs'">
+      <section class="affairs-banner"><div><span class="section-kicker">LESS FRICTION, MORE FOCUS</span><h2>{{ t('少一点来回，多一点便利。') }}</h2><p>{{ t('把商品查询、凭证留存与补贴协同放在一起，让工作事务有迹可循。') }}</p></div><AppIcon name="briefcase" :size="65" /></section><div class="affairs-grid affairs-grid-two"><article class="affair-card"><span class="space-icon sand"><AppIcon name="briefcase" :size="22" /></span><span class="planned-pill demo-pill">{{ t('Mock · 可体验') }}</span><h2>{{ t('找商品，前往平台') }}</h2><p>{{ t('查询咖啡、奶茶和晚餐的模拟商品。跳转会打开淘宝搜索页并填入商品名，由你在平台查询、下单与支付。') }}</p><button class="work-primary" @click="emit('products')">{{ t('商品查询') }}<AppIcon name="external" :size="15" /></button></article><article class="affair-card"><span class="space-icon sage"><AppIcon name="file" :size="22" /></span><span class="planned-pill demo-pill">{{ t('已接入') }}</span><h2>{{ t('凭证与补贴，参与与结算') }}</h2><p>{{ t('保存原始票据、多人确认分摊、主管批准与财务结算均已接入；不做 OCR，不把付款当作完成。') }}</p><small class="affair-note">{{ t('在下方直接办理；权限、版本与额度由服务端校验。') }}</small></article></div><div class="affairs-panel-slot"><AffairsPanel /></div><div class="affairs-boundary"><AppIcon name="info" :size="19" /><p>{{ t('补贴申请、参与确认与财务结算已接入；模拟商品查询仍仅演示，不创建订单、不代支付、不确认实际成交。凭证无法识别票据内容，需人工核对。') }}</p></div>
     </template>
-    <footer class="work-page-footer"><span>知序 · 企业知识与工作助手</span><span>有依据地回答，有边界地行动。</span></footer>
+    <footer class="work-page-footer"><span>{{ t('知序 · 企业知识与工作助手') }}</span><span>{{ t('有依据地回答，有边界地行动。') }}</span></footer>
   </div>
 </template>
 

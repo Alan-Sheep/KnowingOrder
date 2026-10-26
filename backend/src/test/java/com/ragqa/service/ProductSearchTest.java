@@ -43,16 +43,23 @@ class ProductSearchTest {
         var result = service.search(" 请帮我找 COFFEE ");
         assertThat(result.provider()).isEqualTo("MOCK");
         assertThat(result.simulated()).isTrue();
-        assertThat(result.notice()).contains("模拟", "首页", "不对应真实商品");
+        assertThat(result.notice()).contains("模拟", "搜索", "不对应本系统的示例商品");
         assertThat(result.items()).hasSize(2).allSatisfy(item -> {
             assertThat(item.id()).startsWith("mock-");
             assertThat(item.referencePrice()).isPositive();
             assertThat(item.currency()).isEqualTo("CNY");
-            assertThat(item.linkType()).isEqualTo("PLATFORM_HOME");
+            assertThat(item.linkType()).isEqualTo("PLATFORM_SEARCH");
             URI uri = URI.create(item.jumpUrl());
             assertThat(uri.getScheme()).isEqualTo("https");
-            assertThat(uri.getHost()).isEqualTo("www.taobao.com");
+            // 跳转是淘宝搜索页而不是首页：示例商品是虚构的，不存在可直达的真实详情页。
+            assertThat(uri.getHost()).isEqualTo("s.taobao.com");
+            assertThat(uri.getPath()).isEqualTo("/search");
             assertThat(uri.getUserInfo()).isNull();
+            // 查询串只允许一个 q，且必须是本条目自己的关键词，不能夹带其它参数。
+            assertThat(uri.getRawQuery()).startsWith("q=");
+            assertThat(uri.getRawQuery()).doesNotContain("&");
+            String term = java.net.URLDecoder.decode(uri.getRawQuery().substring(2), java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(term).isNotBlank().doesNotContain("（示例）");
         });
         assertThatThrownBy(() -> result.items().clear()).isInstanceOf(UnsupportedOperationException.class);
         mvc.perform(post("/api/products/search").contentType(MediaType.APPLICATION_JSON)
@@ -140,18 +147,25 @@ class ProductSearchTest {
         }
     }
 
+    /**
+     * Mock 适配器不再绑定 dev：它对环境无副作用（不查库、不发外部请求、不产生订单），
+     * prod 下同样装配，否则只开放 IP 演示的环境里商品查询会整个消失。
+     * 但 provider 一旦被改成 taobao，它必须彻底不装配，不能悄悄回退成假数据。
+     */
     @Test
-    void mockOnlyExistsInDevAndNeverFallsBackFromRealMode() {
+    void mockIsProfileAgnosticButNeverFallsBackFromRealMode() {
         var runner = new ApplicationContextRunner().withUserConfiguration(
                 MockProductSearchService.class, ProductSearchController.class);
-        runner.withPropertyValues("spring.profiles.active=dev").run(context -> {
-            assertThat(context).hasSingleBean(ProductSearchService.class);
-            assertThat(context).hasSingleBean(ProductSearchController.class);
-        });
-        runner.withPropertyValues("spring.profiles.active=prod", "knowingorder.products.provider=mock")
-                .run(context -> assertThat(context).doesNotHaveBean(ProductSearchService.class)
-                        .doesNotHaveBean(ProductSearchController.class));
-        runner.withPropertyValues("spring.profiles.active=dev", "knowingorder.products.provider=taobao")
+        for (String profile : List.of("dev", "prod")) {
+            runner.withPropertyValues("spring.profiles.active=" + profile, "knowingorder.products.provider=mock")
+                    .run(context -> {
+                        assertThat(context).hasSingleBean(ProductSearchService.class);
+                        assertThat(context).hasSingleBean(ProductSearchController.class);
+                        assertThat(context.getBean(ProductSearchService.class))
+                                .isInstanceOf(MockProductSearchService.class);
+                    });
+        }
+        runner.withPropertyValues("spring.profiles.active=prod", "knowingorder.products.provider=taobao")
                 .run(context -> assertThat(context).hasFailed());
     }
 }

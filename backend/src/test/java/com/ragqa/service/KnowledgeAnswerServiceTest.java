@@ -1,5 +1,7 @@
 package com.ragqa.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ragqa.common.PageResult;
 import com.ragqa.common.ResultCode;
 import com.ragqa.domain.dto.*;
 import com.ragqa.domain.dto.KnowledgeAnswers.*;
@@ -153,6 +155,96 @@ class KnowledgeAnswerServiceTest {
         code(() -> service.answer(user, 1L, 401L, "字".repeat(1201)), 400);
         code(() -> service.answer(user, 1L, 0L, "餐补？"), 400);
         code(() -> service.evidence(user, 1L, 401L, 0L), 400);
+    }
+
+    @Test
+    void acrossSpacesWithoutPermissionKeepsEvidenceAndNeverCallsModel() {
+        acrossSpaces(2);
+        var answer = service.answerAcross(user, 1L, "校园网密码怎么重置？");
+        assertThat(answer.mode()).isEqualTo("LOCAL_EVIDENCE");
+        assertThat(answer.status()).isEqualTo("EVIDENCE_ONLY");
+        assertThat(answer.evidence()).hasSize(4);
+        verifyNoInteractions(composer);
+    }
+
+    @Test
+    void acrossSpacesUsesAtMostNineSourcesAndKeepsTheNinthCitation() {
+        acrossSpaces(6);
+        service.close(); service = create("1:401,1:402,1:403,1:404,1:405,1:406");
+        when(composer.compose(anyString(), anyList(), any())).thenAnswer(call -> {
+            List<Evidence> selected = call.getArgument(1);
+            assertThat(selected).hasSize(9);
+            return List.of(new Part(1, call.getArgument(0), "ANSWERED", List.of(new Paragraph("按指南重置。",
+                    List.of(new Citation(9, selected.get(8), selected.get(8).content())))), List.of()));
+        });
+        var answer = service.answerAcross(user, 1L, "校园网密码怎么重置？");
+        assertThat(answer.mode()).isEqualTo("SYNTHETIC_MODEL");
+        assertThat(answer.status()).isEqualTo("ANSWERED");
+        assertThat(answer.evidence()).hasSize(9);
+        assertThat(answer.parts().get(0).paragraphs().get(0).citations().get(0).evidence())
+                .isEqualTo(answer.evidence().get(8).evidence());
+        verify(composer, times(1)).compose(anyString(), anyList(), any());
+        verify(composer, times(1)).review(anyString(), anyList(), any());
+    }
+
+    @Test
+    void discardedUnapprovedCandidateCannotDisableGenerationForApprovedFinalEvidence() {
+        acrossSpaces(6);
+        var discarded = new Evidence(999L, 999L, 999L, 1, "校园活动", 0, "校园活动通知。", 0, 7, 1, 1);
+        when(retriever.retrieve(eq(member), eq(406L), anyString(), any())).thenReturn(List.of(discarded));
+        service.close(); service = create("1:401,1:402,1:403,1:404,1:405");
+        when(composer.compose(anyString(), anyList(), any())).thenAnswer(call -> {
+            List<Evidence> selected = call.getArgument(1);
+            assertThat(selected).hasSize(9).doesNotContain(discarded);
+            return List.of(new Part(1, call.getArgument(0), "NO_EVIDENCE", List.of(), List.of("缺少具体步骤。")));
+        });
+        var answer = service.answerAcross(user, 1L, "校园网密码怎么重置？");
+        assertThat(answer.evidence()).noneMatch(item -> item.spaceId().equals(406L));
+        assertThat(answer.mode()).isEqualTo("SYNTHETIC_MODEL");
+        verify(composer, times(1)).compose(anyString(), anyList(), any());
+    }
+
+    @Test
+    void selectedUnapprovedSourceStillPreventsAllModelCalls() {
+        acrossSpaces(2);
+        service.close(); service = create("1:401");
+        var answer = service.answerAcross(user, 1L, "校园网密码怎么重置？");
+        assertThat(answer.evidence()).anyMatch(item -> item.spaceId().equals(402L));
+        assertThat(answer.mode()).isEqualTo("LOCAL_EVIDENCE");
+        assertThat(answer.status()).isEqualTo("EVIDENCE_ONLY");
+        verifyNoInteractions(composer);
+    }
+
+    @Test
+    void acrossRevocationAfterGenerationStopsBeforeSendingQuotesForReview() {
+        acrossSpaces(1);
+        service.close(); service = create("1:401");
+        when(composer.compose(anyString(), anyList(), any())).thenAnswer(call -> {
+            when(members.requireCurrent(member)).thenThrow(new BusinessException(ResultCode.NOT_FOUND));
+            return List.of(new Part(1, call.getArgument(0), "NO_EVIDENCE", List.of(), List.of("缺少依据。")));
+        });
+        code(() -> service.answerAcross(user, 1L, "校园网密码怎么重置？"), 404);
+        verify(composer, never()).review(anyString(), anyList(), any());
+    }
+
+    private void acrossSpaces(int count) {
+        var spaces = new java.util.ArrayList<EnterpriseResources.KnowledgeSpace>();
+        for (int index = 0; index < count; index++) {
+            long space = 401L + index;
+            spaces.add(new EnterpriseResources.KnowledgeSpace(space, "校园服务" + index, 1));
+            var sources = new java.util.ArrayList<Evidence>();
+            for (int rank = 0; rank < 2; rank++) {
+                long id = 100L + index * 2 + rank;
+                String content = "校园网密码重置请使用信息服务门户。";
+                var source = new Evidence(id, id, id, 1, "校园网密码重置", rank, content, 0, content.length(), 1, 1);
+                sources.add(source);
+                when(retriever.requireEvidence(member, space, id)).thenReturn(source);
+            }
+            when(retriever.retrieve(eq(member), eq(space), anyString(), any())).thenReturn(List.copyOf(sources));
+        }
+        var page = new Page<EnterpriseResources.KnowledgeSpace>(1, 500, count);
+        page.setRecords(spaces);
+        when(resources.listSpaces(member, 1L, 500L)).thenReturn(PageResult.of(page));
     }
 
     private KnowledgeAnswerService create(String spaces) { return new KnowledgeAnswerService(members, resources, retriever, composer, spaces); }

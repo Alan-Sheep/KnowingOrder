@@ -32,7 +32,12 @@ public interface AffairsRuleMapper {
     record Quota(Long id, Long memberId, String period, Long limitCents, long usedCents, long reservedCents,
             long revision) { }
 
-    /** 参与人下拉所需的最小目录：只含编号与显示名，不含联系方式或私有资源。编号用 Long 才会序列化成字符串。 */
+    /**
+     * 参与人下拉所需的最小目录：只含编号与显示名，不含联系方式或私有资源。编号用 Long 才会序列化成字符串。
+     *
+     * <p>字段名沿用 username 是为了兼容既有接口契约，实际取值是中文姓名（昵称），
+     * 见 {@link #DISPLAY_NAME}；登录账号属于认证信息，不下发到业务下拉。</p>
+     */
     record MemberOption(Long memberId, String username) { }
 
     @Data
@@ -101,8 +106,14 @@ public interface AffairsRuleMapper {
             + "WHERE enterprise_id=#{enterprise} AND member_id=#{member} AND period=#{period}")
     Quota quota(@Param("enterprise") long enterprise, @Param("member") long member, @Param("period") String period);
 
+    /**
+     * 业务界面统一展示中文姓名：昵称为空或只有空白时回退到登录账号，避免出现空名字。
+     * 登录账号（拼音）只在认证与账号管理页面出现，不出现在业务下拉与人名标签里。
+     */
+    String DISPLAY_NAME = "COALESCE(NULLIF(TRIM(u.nickname),''),u.username)";
+
     /** 企业内有效成员目录，仅用于参与人下拉；通讯录可见不代表可读其私有资料。 */
-    @Select("SELECT m.id AS memberId,u.username FROM sys_enterprise_member m "
+    @Select("SELECT m.id AS memberId," + DISPLAY_NAME + " AS username FROM sys_enterprise_member m "
             + "JOIN sys_user u ON u.id=m.user_id AND u.status=0 AND u.deleted=0 "
             + "WHERE m.enterprise_id=#{enterprise} AND m.status=0 "
             + "AND m.role IN ('EMPLOYEE','ADMIN','FINANCE') ORDER BY u.username LIMIT 500")

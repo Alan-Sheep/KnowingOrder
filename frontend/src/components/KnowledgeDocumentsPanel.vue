@@ -3,9 +3,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { createEnterpriseClient, EnterpriseError, positiveId } from '../enterprise';
 import type { KnowledgeSpace, VectorJob, VectorPublication } from '../enterprise';
 import { workspaceUuid } from '../knowledge-workspace';
+import { uuid } from '../uuid';
 import type { KnowledgeDocument, DocumentVersion, KnowledgeChunk, KnowledgeGrant, PageData, UploadMetadata } from '../knowledge';
 import { ingestActive } from '../knowledge-ingest';
 import type { IngestJob } from '../knowledge-ingest';
+import { t } from '../i18n';
 import AppIcon from './AppIcon.vue';
 
 const props = defineProps<{ enterpriseId: string; space: KnowledgeSpace }>();
@@ -33,7 +35,7 @@ const departmentOptions = ref<{ id: string; name: string }[]>([]);
 const canMaintain = ref(false);
 const busy = ref(false);
 const failed = ref(false);
-const message = ref('点击刷新资料，核验当前权限和文档状态。');
+const message = ref(t('点击刷新资料，核验当前权限和文档状态。'));
 const rename = ref(props.space.name);
 const targetType = ref('MEMBER');
 const targetId = ref('');
@@ -53,15 +55,15 @@ const ownerLabel = computed(() => {
   if (!selected.value) return '';
   return selected.value.ownerMemberName
     ? `${selected.value.ownerMemberName}（#${selected.value.ownerMemberId}）`
-    : `成员 #${selected.value.ownerMemberId}`;
+    : `${t('成员')} #${selected.value.ownerMemberId}`;
 });
 function memberLabel(id: string) {
   const found = memberOptions.value.find(member => member.id === id);
-  return found ? `${found.username}（#${id}）` : `成员 #${id}`;
+  return found ? `${found.username}（#${id}）` : `${t('成员')} #${id}`;
 }
 function departmentLabel(id: string) {
   const found = departmentOptions.value.find(department => department.id === id);
-  return found ? `${found.name}（#${id}）` : `部门 #${id}`;
+  return found ? `${found.name}（#${id}）` : `${t('部门')} #${id}`;
 }
 // 组织接口仅管理员可读；维护者读取失败时保留编号输入作为回退。
 async function loadCandidates() {
@@ -70,7 +72,7 @@ async function loadCandidates() {
       api.organizationMembers(props.enterpriseId, 1),
       api.organizationDepartments(props.enterpriseId, 1)
     ]);
-    memberOptions.value = memberPage.records.filter(member => member.status === 0).map(member => ({ id: member.id, username: member.username }));
+    memberOptions.value = memberPage.records.filter(member => member.status === 0).map(member => ({ id: member.id, username: member.displayName || member.username }));
     departmentOptions.value = departmentPage.page.records.map(department => ({ id: department.id, name: department.name }));
   } catch (error) {
     memberOptions.value = []; departmentOptions.value = [];
@@ -97,22 +99,22 @@ let vectorReads = 0;
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
 let pollUntil = 0;
 let alive = true;
-const labels: Record<string, string> = { PENDING: '待解析', READY: '片段就绪', FAILED: '解析失败', DRAFT: '草稿', PUBLISHED: '已发布', WITHDRAWN: '已撤回', DELETED: '已删除' };
+const labels = computed<Record<string, string>>(() => ({ PENDING: t('待解析'), READY: t('片段就绪'), FAILED: t('解析失败'), DRAFT: t('草稿'), PUBLISHED: t('已发布'), WITHDRAWN: t('已撤回'), DELETED: t('已删除') }));
 /** 检索索引的任务与指针状态，界面上不出现英文枚举和内部术语。 */
-const indexJobLabels: Record<string, string> = { QUEUED: '排队中', RUNNING: '正在建立', VERIFIED: '已建立完成', CANCELLED: '已取消', TIMED_OUT: '超时未完成', FAILED: '建立失败' };
-const indexPointerLabels: Record<string, string> = { UNPUBLISHED: '问答还搜不到这份资料', READY: '问答已能搜到这份资料', STALE: '资料变过，建议重建', WITHDRAWN: '已关闭检索' };
+const indexJobLabels = computed<Record<string, string>>(() => ({ QUEUED: t('排队中'), RUNNING: t('正在建立'), VERIFIED: t('已建立完成'), CANCELLED: t('已取消'), TIMED_OUT: t('超时未完成'), FAILED: t('建立失败') }));
+const indexPointerLabels = computed<Record<string, string>>(() => ({ UNPUBLISHED: t('问答还搜不到这份资料'), READY: t('问答已能搜到这份资料'), STALE: t('资料变过，建议重建'), WITHDRAWN: t('已关闭检索') }));
 
 async function run(work: () => Promise<void>, vector = false) {
   if (busy.value) return;
   busy.value = true;
   emit('busy', true);
   failed.value = false;
-  message.value = '正在处理，单次操作最多等待10秒…';
+  message.value = t('正在处理，单次操作最多等待10秒…');
   try { await work(); }
   catch (error) {
     if (!alive) return;
     failed.value = true;
-    message.value = error instanceof Error ? error.message : '操作未完成，请刷新后重试。';
+    message.value = error instanceof Error ? error.message : t('操作未完成，请刷新后重试。');
     if (vector) stopVectorPolling();
     if (!vector && error instanceof EnterpriseError && error.uncertain) unknownWrite.value = true;
     if (error instanceof EnterpriseError && [401, 404].includes(error.code)) {
@@ -149,7 +151,7 @@ async function refreshData(page = 1) {
   }
   unknownWrite.value = false;
 }
-async function refresh(page = 1) { await run(async () => { await refreshData(page); message.value = '资料状态已刷新。维护者可查看草稿；只读成员仅可访问当前有效的发布版本。'; }); }
+async function refresh(page = 1) { await run(async () => { await refreshData(page); message.value = t('资料状态已刷新。维护者可查看草稿；只读成员仅可访问当前有效的发布版本。'); }); }
 async function select(document: KnowledgeDocument) {
   if (busy.value || vectorUncertain.value) return;
   clearVector();
@@ -164,7 +166,7 @@ async function select(document: KnowledgeDocument) {
     // 先打开阅读层，让正文加载过程有明确的等待界面。
     readerOpen.value = true;
     await prepareReader();
-    message.value = '已读取文档及当前允许访问的版本。';
+    message.value = t('已读取文档及当前允许访问的版本。');
   });
 }
 async function prepareReader() {
@@ -184,7 +186,7 @@ async function loadReader(version: DocumentVersion, page: number, replace = fals
     readerPage.value = data.pageNum; readerPages.value = data.pages;
     readerVersion.value = version;
   } catch (error) {
-    readerError.value = error instanceof Error ? error.message : '正文读取失败，请稍后重试。';
+    readerError.value = error instanceof Error ? error.message : t('正文读取失败，请稍后重试。');
   } finally { readerLoading.value = false; }
 }
 function closeReader() { readerOpen.value = false; }
@@ -194,21 +196,21 @@ function moreReader() {
 async function downloadReader() {
   if (readerVersion.value) await download(readerVersion.value);
 }
-async function versionPage(page: number) { await run(async () => { if (selected.value) versions.value = await api.versions(props.enterpriseId, props.space.id, selected.value.id, page); message.value = '版本列表已更新。'; }); }
+async function versionPage(page: number) { await run(async () => { if (selected.value) versions.value = await api.versions(props.enterpriseId, props.space.id, selected.value.id, page); message.value = t('版本列表已更新。'); }); }
 async function renameSpace() {
-  await run(async () => { emit('updated', await api.renameSpace(props.enterpriseId, props.space.id, props.space.permissionVersion, rename.value)); message.value = '空间名称已更新。'; });
+  await run(async () => { emit('updated', await api.renameSpace(props.enterpriseId, props.space.id, props.space.permissionVersion, rename.value)); message.value = t('空间名称已更新。'); });
 }
 async function changeGrant(revoke = false) {
   await run(async () => {
     emit('updated', await api.changeGrant(props.enterpriseId, props.space.id, props.space.permissionVersion, targetType.value, targetId.value, permission.value, revoke));
     grants.value = await api.grants(props.enterpriseId, props.space.id);
-    message.value = revoke ? '授权已撤销，后续读取会重新校验。' : '明确授权已保存。';
+    message.value = revoke ? t('授权已撤销，后续读取会重新校验。') : t('明确授权已保存。');
   });
 }
 function date(value: string) {
   if (!value) return null;
   const time = Date.parse(value);
-  if (!Number.isSafeInteger(time) || time < 0) throw new EnterpriseError('有效期日期不合法。');
+  if (!Number.isSafeInteger(time) || time < 0) throw new EnterpriseError(t('有效期日期不合法。'));
   return String(time);
 }
 async function upload() {
@@ -216,9 +218,9 @@ async function upload() {
   await run(async () => {
     if (!pendingUpload.value) {
       const file = fileInput.value?.files?.[0];
-      if (!file) throw new EnterpriseError('请先选择TXT/Markdown、文字层PDF或DOCX原件。');
-      if (replace.value && !selected.value) throw new EnterpriseError('请先选择要新增版本的文档。');
-      pendingUpload.value = { file, metadata: { requestId: crypto.randomUUID(), documentId: replace.value ? selected.value!.id : null,
+      if (!file) throw new EnterpriseError(t('请先选择TXT/Markdown、文字层PDF或DOCX原件。'));
+      if (replace.value && !selected.value) throw new EnterpriseError(t('请先选择要新增版本的文档。'));
+      pendingUpload.value = { file, metadata: { requestId: uuid(), documentId: replace.value ? selected.value!.id : null,
         expectedRevision: replace.value ? selected.value!.revision : null, title: title.value.trim() || file.name,
         validFromMs: date(from.value), validUntilMs: date(until.value) } };
     }
@@ -230,7 +232,7 @@ async function upload() {
       selected.value = await api.document(props.enterpriseId, props.space.id, result.documentId);
       clearVector();
       await refreshData();
-      message.value = '原件与草稿版本已保存。请完成解析、检查片段，再明确发布。';
+      message.value = t('原件与草稿版本已保存。请完成解析、检查片段，再明确发布。');
     } catch (error) {
       if (!(error instanceof EnterpriseError && error.uncertain)) pendingUpload.value = undefined;
       throw error;
@@ -256,15 +258,15 @@ async function readIngest(version: DocumentVersion, restart = true) {
     if (!alive) return;
     ingestVersion.value = version; ingestTasks.value = tasks;
     if (tasks.length && !tasks.some(ingestActive)) await refreshData();
-    message.value = tasks[0]?.message ?? '本版本暂无本人入库任务。';
+    message.value = tasks[0]?.message ?? t('本版本暂无本人入库任务。');
   });
   if (restart && !failed.value) poll();
 }
 async function submitIngest(version: DocumentVersion, action: string) {
   if (!selected.value) return;
-  if (action === 'REBUILD' && !window.confirm('仅重建此草稿的片段，不发布。确认继续？')) return;
+  if (action === 'REBUILD' && !window.confirm(t('仅重建此草稿的片段，不发布。确认继续？'))) return;
   await run(async () => {
-    if (!pendingIngest.value) pendingIngest.value = { id: crypto.randomUUID(), version, revision: selected.value!.revision, action };
+    if (!pendingIngest.value) pendingIngest.value = { id: uuid(), version, revision: selected.value!.revision, action };
     const pending = pendingIngest.value;
     try {
       // 未知写结果先读取原UUID；确认为不存在才允许同UUID、同参数人工重传。
@@ -313,11 +315,11 @@ async function readPointer() {
     const pending = pendingPointer.value;
     if (pending) {
       if (BigInt(pointer.revision) <= BigInt(pending.revision)) {
-        vectorNotice.value = '尚未确认上次索引写入结果；继续查询指针，不自动重发。';
+        vectorNotice.value = t('尚未确认上次索引写入结果；继续查询指针，不自动重发。');
       } else {
         const matched = pointer.revision === (BigInt(pending.revision) + 1n).toString()
           && (pending.action === 'publish' ? pointer.status === 'READY' && pointer.jobId === pending.jobId : pointer.status === 'WITHDRAWN');
-        vectorNotice.value = matched ? '已核对上次索引操作的结果。' : '指针已被其他操作更新，请按当前状态重新判断。';
+        vectorNotice.value = matched ? t('已核对上次索引操作的结果。') : t('指针已被其他操作更新，请按当前状态重新判断。');
         pendingPointer.value = undefined; vectorUncertain.value = undefined;
       }
     }
@@ -328,7 +330,7 @@ function pollVector() {
   clearTimeout(vectorTimer);
   if (!alive || !vectorActive.value || !vectorPollUntil) return;
   if (Date.now() >= vectorPollUntil || vectorReads >= 80) {
-    stopVectorPolling(); vectorNotice.value = '自动查询已到上限；后台仍按原120秒截止，可用原编号手动查询。'; return;
+    stopVectorPolling(); vectorNotice.value = t('自动查询已到上限；后台仍按原120秒截止，可用原编号手动查询。'); return;
   }
   vectorTimer = setTimeout(async () => {
     if (!vectorPollUntil || Date.now() >= vectorPollUntil) { pollVector(); return; }
@@ -344,11 +346,11 @@ async function readVector(restart = true) {
     const job = await api.readVectorJob(props.enterpriseId, props.space.id, version.documentId, version.id, id);
     if (!alive || vectorVersion.value?.id !== version.id || vectorId.value !== id) return;
     if (pendingVector.value && job.expectedRevision !== pendingVector.value.revision)
-      throw new EnterpriseError('原任务修订与提交参数不一致，请核对后端记录。');
+      throw new EnterpriseError(t('原任务修订与提交参数不一致，请核对后端记录。'));
     vectorTask.value = job;
     if (vectorUncertain.value === 'TASK') { vectorUncertain.value = undefined; pendingVector.value = undefined; }
     message.value = job.message;
-    if (!vectorActive.value) { stopVectorPolling(); vectorNotice.value = '任务已结束；核验完成不等于索引已发布。'; }
+    if (!vectorActive.value) { stopVectorPolling(); vectorNotice.value = t('任务已结束；核验完成不等于索引已发布。'); }
   }, true);
   if (restart && !failed.value && vectorActive.value) {
     vectorPollUntil = Math.min(Date.now() + 130000, vectorTask.value!.deadlineMs + 10000); vectorReads = 0; pollVector();
@@ -359,19 +361,19 @@ async function submitVector() {
   if (!version || !document || !canMaintain.value || vectorUncertain.value || vectorActive.value
     || unknownWrite.value || version.parseStatus !== 'READY' || document.publishedVersionId !== version.id) return;
   await run(async () => {
-    if (!Number.isSafeInteger(document.revision) || document.revision <= 0) throw new EnterpriseError('文档修订不安全，请刷新文档。');
-    const pending = { id: crypto.randomUUID(), revision: String(document.revision) };
+    if (!Number.isSafeInteger(document.revision) || document.revision <= 0) throw new EnterpriseError(t('文档修订不安全，请刷新文档。'));
+    const pending = { id: uuid(), revision: String(document.revision) };
     pendingVector.value = pending; vectorId.value = pending.id; vectorTask.value = undefined;
     try {
       const job = await api.submitVectorJob(props.enterpriseId, props.space.id, document.id, version.id, pending.id, pending.revision);
       if (!alive) return;
       vectorTask.value = job; pendingVector.value = undefined; message.value = job.message;
-      vectorNotice.value = '请复制任务编号；刷新后选回本版本，输入原编号查询，不会自动重建。';
+      vectorNotice.value = t('已开始建立索引。任务编号：{id}（已自动填入下方输入框，建议复制留存）。页面会自动刷新进度，中途离开后凭此编号回来查询。', { id: pending.id });
       vectorPollUntil = Date.now() + 130000; vectorReads = 0; pollVector();
     } catch (error) {
-      if (error instanceof EnterpriseError && error.uncertain) {
-        vectorUncertain.value = 'TASK'; vectorNotice.value = '提交结果未知，请查询原任务编号；禁止换编号自动重试。';
-      } else pendingVector.value = undefined;
+        if (error instanceof EnterpriseError && error.uncertain) {
+          vectorUncertain.value = 'TASK'; vectorNotice.value = t('提交结果未知。请点「按编号查进度」，用下方输入框里已填好的编号查询；不要换编号重试。');
+        } else pendingVector.value = undefined;
       throw error;
     }
   }, true);
@@ -385,7 +387,7 @@ async function cancelVector() {
       const result = await api.cancelVectorJob(props.enterpriseId, props.space.id, job.documentId, job.versionId, job.id);
       if (!alive) return;
       vectorTask.value = result; message.value = result.message;
-      vectorNotice.value = '以服务端状态为准；取消任务不代表回滚已写向量或撤回索引。';
+      vectorNotice.value = t('以服务端状态为准；取消任务不代表回滚已写向量或撤回索引。');
     } catch (error) {
       if (error instanceof EnterpriseError && error.uncertain) vectorUncertain.value = 'TASK';
       throw error;
@@ -396,7 +398,7 @@ async function changeVectorPointer(action: 'publish' | 'withdraw') {
   const pointer = vectorPointer.value; const job = vectorTask.value;
   if (!selected.value || !pointer || !canMaintain.value || vectorUncertain.value || unknownWrite.value
     || (action === 'publish' && (job?.status !== 'VERIFIED' || selected.value.publishedVersionId !== job.versionId))) return;
-  if (!window.confirm(action === 'publish' ? '确认显式发布已核验索引？这不会自动启用正式混合问答。' : '确认撤回索引指针？文档版本不会被撤回。')) return;
+  if (!window.confirm(action === 'publish' ? t('确认显式发布已核验索引？这不会自动启用正式混合问答。') : t('确认撤回索引指针？文档版本不会被撤回。'))) return;
   await run(async () => {
     pendingPointer.value = { action, jobId: action === 'publish' ? job!.id : pointer.jobId, revision: pointer.revision };
     try {
@@ -408,7 +410,7 @@ async function changeVectorPointer(action: 'publish' | 'withdraw') {
     } catch (error) {
       vectorPointer.value = undefined;
       if (error instanceof EnterpriseError && error.uncertain) {
-        vectorUncertain.value = 'POINTER'; vectorNotice.value = '索引写入结果未知；请查询当前指针核对，不自动重发。';
+        vectorUncertain.value = 'POINTER'; vectorNotice.value = t('索引写入结果未知；请查询当前指针核对，不自动重发。');
       } else pendingPointer.value = undefined;
       throw error;
     }
@@ -416,21 +418,21 @@ async function changeVectorPointer(action: 'publish' | 'withdraw') {
 }
 async function lifecycle(version: DocumentVersion | undefined, action: string) {
   if (!selected.value || vectorUncertain.value) return;
-  if (['DELETE_DOCUMENT', 'DELETE_VERSION', 'WITHDRAW'].includes(action) && !window.confirm('确认此操作？撤回或删除会立即阻止普通成员后续访问，不会自动回退到旧版本。')) return;
+  if (['DELETE_DOCUMENT', 'DELETE_VERSION', 'WITHDRAW'].includes(action) && !window.confirm(t('确认此操作？撤回或删除会立即阻止普通成员后续访问，不会自动回退到旧版本。'))) return;
   await run(async () => {
     const result = await api.lifecycle(props.enterpriseId, props.space.id, selected.value!.id, version?.id ?? null, selected.value!.revision, action);
     selected.value = action === 'DELETE_DOCUMENT' ? undefined : result;
     versions.value = undefined; fragments.value = undefined;
-    await refreshData(); message.value = '生命周期状态已更新。删除为逻辑删除，原件留存与磁盘清理由管理员按政策处理。';
+    await refreshData(); message.value = t('生命周期状态已更新。删除为逻辑删除，原件留存与磁盘清理由管理员按政策处理。');
     clearVector();
   });
 }
 async function owner() {
-  await run(async () => { if (!selected.value) return; selected.value = await api.assignOwner(props.enterpriseId, props.space.id, selected.value.id, selected.value.revision, ownerId.value); message.value = '负责人已更新；新负责人必须已有该空间维护权。'; });
+  await run(async () => { if (!selected.value) return; selected.value = await api.assignOwner(props.enterpriseId, props.space.id, selected.value.id, selected.value.revision, ownerId.value); message.value = t('负责人已更新；新负责人必须已有该空间维护权。'); });
 }
 async function showChunks(version: DocumentVersion, page = 1) {
   fragmentOpen.value = true;
-  await run(async () => { fragments.value = undefined; fragmentVersion.value = version; fragments.value = await api.chunks(props.enterpriseId, props.space.id, version.documentId, version.id, page); message.value = '片段已读取；坐标对应提取后的文字。PDF含页码标记；DOCX段落和表格转为文字，不提供Word物理页码。'; });
+  await run(async () => { fragments.value = undefined; fragmentVersion.value = version; fragments.value = await api.chunks(props.enterpriseId, props.space.id, version.documentId, version.id, page); message.value = t('片段已读取；坐标对应提取后的文字。PDF含页码标记；DOCX段落和表格转为文字，不提供Word物理页码。'); });
 }
 function onFragmentToggle(event: Event) { fragmentOpen.value = (event.target as HTMLDetailsElement).open; }
 async function download(version: DocumentVersion) {
@@ -439,14 +441,14 @@ async function download(version: DocumentVersion) {
     if (!alive) return;
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = version.originalName; anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000); message.value = '原件已通过当前权限与完整性校验，下载已开始。';
+    setTimeout(() => URL.revokeObjectURL(url), 1000); message.value = t('原件已通过当前权限与完整性校验，下载已开始。');
   });
 }
 function displayDate(value: string | null) {
-  if (value === null) return '不限';
+  if (value === null) return t('不限');
   const time = Number(value);
   return Number.isSafeInteger(time) && time <= 8640000000000000
-    ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(time) : '超出日期显示范围';
+    ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(time) : t('超出日期显示范围');
 }
 function onKeydown(event: KeyboardEvent) { if (event.key === 'Escape' && readerOpen.value) closeReader(); }
 onMounted(() => { void refresh(); window.addEventListener('keydown', onKeydown); });
@@ -454,51 +456,51 @@ onUnmounted(() => { alive = false; window.removeEventListener('keydown', onKeydo
 </script>
 
 <template>
-  <section class="document-manager" aria-label="知识文档管理">
-    <div class="toolbar document-heading"><div><h3><AppIcon name="file" :size="18" />空间资料<span v-if="catalog" class="total-pill">{{ catalog.total }}</span></h3><p>整理原件、核对内容，再发布给团队使用。</p></div><button :disabled="busy" @click="refresh()"><AppIcon name="refresh" :size="14" />刷新资料与权限</button></div>
-    <ol v-if="canMaintain" class="knowledge-steps" aria-label="资料发布流程"><li><span><AppIcon name="file" :size="16" /></span><div><strong>上传资料</strong><small>01 · 保存原件与草稿</small></div></li><li><span><AppIcon name="layers" :size="16" /></span><div><strong>解析核对</strong><small>02 · 检查提取的原文片段</small></div></li><li><span><AppIcon name="check" :size="16" /></span><div><strong>确认发布</strong><small>03 · 按授权范围供团队使用</small></div></li></ol>
+  <section class="document-manager" :aria-label="t('知识文档管理')">
+    <div class="toolbar document-heading"><div><h3><AppIcon name="file" :size="18" />{{ t('空间资料') }}<span v-if="catalog" class="total-pill">{{ catalog.total }}</span></h3><p>{{ t('整理原件、核对内容，再发布给团队使用。') }}</p></div><button :disabled="busy" @click="refresh()"><AppIcon name="refresh" :size="14" />{{ t('刷新资料与权限') }}</button></div>
+    <ol v-if="canMaintain" class="knowledge-steps" :aria-label="t('资料发布流程')"><li><span><AppIcon name="file" :size="16" /></span><div><strong>{{ t('上传资料') }}</strong><small>{{ t('01 · 保存原件与草稿') }}</small></div></li><li><span><AppIcon name="layers" :size="16" /></span><div><strong>{{ t('解析核对') }}</strong><small>{{ t('02 · 检查提取的原文片段') }}</small></div></li><li><span><AppIcon name="check" :size="16" /></span><div><strong>{{ t('确认发布') }}</strong><small>{{ t('03 · 按授权范围供团队使用') }}</small></div></li></ol>
     <p class="feedback" :class="{ error: failed }" role="status" aria-live="polite">{{ message }}</p>
-    <p v-if="unknownWrite" class="feedback error">操作结果待核对，先刷新状态。上传原请求仍可使用同一编号人工核对重试。</p>
-    <p v-if="pendingIngest" class="feedback">待核对入库编号：{{ pendingIngest.id }}。<button :disabled="busy" @click="submitIngest(pendingIngest.version, pendingIngest.action)">核对原任务，必要时同编号重传</button></p>
-    <section v-if="ingestVersion" aria-label="文档入库任务"><h4>版本 {{ ingestVersion.versionNo }} 的本人入库任务</h4><p>总时限30秒；刷新后选择版本并查看任务可恢复状态，不会自动重新提交。自动查询最多40秒，网络错误后可手动刷新。</p><button :disabled="busy" @click="readIngest(ingestVersion)">刷新入库任务</button><ul><li v-for="job in ingestTasks" :key="job.id">{{ job.status }} · {{ job.message }}<small>{{ job.id }} · 尝试 {{ job.attempts }} 次<span v-if="job.failureCode"> · {{ job.failureCode }}</span></small><button v-if="ingestActive(job)" :disabled="busy || unknownWrite" @click="cancelIngest(job)">取消入库任务</button></li></ul></section>
-    <details v-if="canMaintain" class="space-settings"><summary><AppIcon name="settings" :size="16" /><span>空间设置与明确授权</span><small>名称 · 成员 · 部门权限</small><AppIcon name="chevron" :size="14" /></summary>
-      <form @submit.prevent="renameSpace"><fieldset :disabled="busy || unknownWrite"><label>空间名称<input v-model="rename" maxlength="128" required /></label><button>保存名称</button></fieldset></form>
-      <form @submit.prevent="changeGrant()"><fieldset :disabled="busy || unknownWrite"><label>目标类型<select v-model="targetType" @change="targetId = ''"><option value="MEMBER">成员</option><option value="DEPARTMENT">直属部门</option></select></label><label>{{ targetType === 'MEMBER' ? '选择成员' : '选择部门' }}<select v-if="targetType === 'MEMBER' && memberOptions.length" v-model="targetId" required><option value="" disabled>请选择成员</option><option v-for="member in memberOptions" :key="member.id" :value="member.id">{{ member.username }}（#{{ member.id }}）</option></select><select v-else-if="targetType === 'DEPARTMENT' && departmentOptions.length" v-model="targetId" required><option value="" disabled>请选择部门</option><option v-for="department in departmentOptions" :key="department.id" :value="department.id">{{ department.name }}（#{{ department.id }}）</option></select><input v-else v-model="targetId" inputmode="numeric" required :placeholder="targetType === 'MEMBER' ? '成员编号' : '部门编号'" /></label><label>权限<select v-model="permission"><option value="READ">只读</option><option value="MAINTAIN">维护（含读取）</option></select></label><button :disabled="!positiveId(targetId)">授予或更新</button><button type="button" :disabled="!positiveId(targetId)" @click="changeGrant(true)">撤销目标授权</button></fieldset></form>
-      <ul><li v-for="grant in grants" :key="grant.id">{{ grant.memberId ? memberLabel(grant.memberId) : departmentLabel(grant.departmentId ?? '') }} · {{ grant.permission }} · {{ grant.status === 0 ? '有效' : '已撤销' }}</li></ul>
+    <p v-if="unknownWrite" class="feedback error">{{ t('操作结果待核对，先刷新状态。上传原请求仍可使用同一编号人工核对重试。') }}</p>
+    <p v-if="pendingIngest" class="feedback">{{ t('待核对入库编号：{id}。', { id: pendingIngest.id }) }}<button :disabled="busy" @click="submitIngest(pendingIngest.version, pendingIngest.action)">{{ t('核对原任务，必要时同编号重传') }}</button></p>
+    <section v-if="ingestVersion" aria-label="文档入库任务"><h4>{{ t('版本 {version} 的本人入库任务', { version: ingestVersion.versionNo }) }}</h4><p>{{ t('总时限30秒；刷新后选择版本并查看任务可恢复状态，不会自动重新提交。自动查询最多40秒，网络错误后可手动刷新。') }}</p><button :disabled="busy" @click="readIngest(ingestVersion)">{{ t('刷新入库任务') }}</button><ul><li v-for="job in ingestTasks" :key="job.id">{{ job.status }} · {{ job.message }}<small>{{ job.id }} · {{ t('尝试 {count} 次', { count: job.attempts }) }}<span v-if="job.failureCode"> · {{ job.failureCode }}</span></small><button v-if="ingestActive(job)" :disabled="busy || unknownWrite" @click="cancelIngest(job)">{{ t('取消入库任务') }}</button></li></ul></section>
+    <details v-if="canMaintain" class="space-settings"><summary><AppIcon name="settings" :size="16" /><span>{{ t('空间设置与明确授权') }}</span><small>{{ t('名称 · 成员 · 部门权限') }}</small><AppIcon name="chevron" :size="14" /></summary>
+      <form @submit.prevent="renameSpace"><fieldset :disabled="busy || unknownWrite"><label>{{ t('空间名称') }}<input v-model="rename" maxlength="128" required /></label><button>{{ t('保存名称') }}</button></fieldset></form>
+      <form @submit.prevent="changeGrant()"><fieldset :disabled="busy || unknownWrite"><label>{{ t('目标类型') }}<select v-model="targetType" @change="targetId = ''"><option value="MEMBER">{{ t('成员') }}</option><option value="DEPARTMENT">{{ t('直属部门') }}</option></select></label><label>{{ targetType === 'MEMBER' ? t('选择成员') : t('选择部门') }}<select v-if="targetType === 'MEMBER' && memberOptions.length" v-model="targetId" required><option value="" disabled>{{ t('请选择成员') }}</option><option v-for="member in memberOptions" :key="member.id" :value="member.id">{{ member.username }}（#{{ member.id }}）</option></select><select v-else-if="targetType === 'DEPARTMENT' && departmentOptions.length" v-model="targetId" required><option value="" disabled>{{ t('请选择部门') }}</option><option v-for="department in departmentOptions" :key="department.id" :value="department.id">{{ department.name }}（#{{ department.id }}）</option></select><input v-else v-model="targetId" inputmode="numeric" required :placeholder="targetType === 'MEMBER' ? t('成员编号') : t('部门编号')" /></label><label>{{ t('权限') }}<select v-model="permission"><option value="READ">{{ t('只读') }}</option><option value="MAINTAIN">{{ t('维护（含读取）') }}</option></select></label><button :disabled="!positiveId(targetId)">{{ t('授予或更新') }}</button><button type="button" :disabled="!positiveId(targetId)" @click="changeGrant(true)">{{ t('撤销目标授权') }}</button></fieldset></form>
+      <ul><li v-for="grant in grants" :key="grant.id">{{ grant.memberId ? memberLabel(grant.memberId) : departmentLabel(grant.departmentId ?? '') }} · {{ grant.permission }} · {{ grant.status === 0 ? t('有效') : t('已撤销') }}</li></ul>
     </details>
-    <details v-if="canMaintain" class="upload-panel" :open="!catalog?.total || !!pendingUpload"><summary><span class="upload-summary-icon"><AppIcon name="plus" :size="19" /></span><span><strong>添加知识资料</strong><small>TXT / Markdown / PDF / DOCX · 最大 1 MiB</small></span><AppIcon name="chevron" :size="16" /></summary>
-    <form aria-label="上传知识文档" @submit.prevent="upload"><fieldset :disabled="busy || !!vectorUncertain || (unknownWrite && !pendingUpload)"><legend>保存文字原件</legend>
-      <div v-if="!pendingUpload"><label class="file-drop"><span class="upload-art"><AppIcon name="file" :size="27" /></span><strong>{{ selectedFileName || '选择一份资料，开始整理团队知识' }}</strong><span>点击选择文件 · 支持文字层 PDF，不支持扫描识别</span><input ref="fileInput" type="file" accept=".txt,.md,.pdf,.docx" required @change="selectedFileName = fileInput?.files?.[0]?.name ?? ''" /></label><label>文档标题<input v-model="title" maxlength="255" placeholder="可选，留空将使用文件名称" /></label><details class="upload-options"><summary>版本与有效期设置<AppIcon name="chevron" :size="13" /></summary><label class="check-label"><input v-model="replace" type="checkbox" />为当前所选文档新增版本</label><div class="date-grid"><label>生效时间（当前设备时区）<input v-model="from" type="datetime-local" /></label><label>失效时间（不含该时刻）<input v-model="until" type="datetime-local" /></label></div></details></div>
-      <p v-else>待核对上传编号：{{ pendingUpload.metadata.requestId }}。文件与参数已固定，手动重试仍用此编号。</p>
-      <div class="upload-footer"><small><AppIcon name="shield" :size="13" />原件私有保存 · 上传后仍需解析和发布<br />不进行 OCR，不发送企业原文到外部模型</small><button class="primary-button">{{ pendingUpload ? '使用原编号核对并重试上传' : '保存原件与草稿' }}</button></div>
+    <details v-if="canMaintain" class="upload-panel" :open="!catalog?.total || !!pendingUpload"><summary><span class="upload-summary-icon"><AppIcon name="plus" :size="19" /></span><span><strong>{{ t('添加知识资料') }}</strong><small>{{ t('TXT / Markdown / PDF / DOCX · 最大 1 MiB') }}</small></span><AppIcon name="chevron" :size="16" /></summary>
+    <form :aria-label="t('上传知识文档')" @submit.prevent="upload"><fieldset :disabled="busy || !!vectorUncertain || (unknownWrite && !pendingUpload)"><legend>{{ t('保存文字原件') }}</legend>
+      <div v-if="!pendingUpload"><label class="file-drop"><span class="upload-art"><AppIcon name="file" :size="27" /></span><strong>{{ selectedFileName || t('选择一份资料，开始整理团队知识') }}</strong><span>{{ t('点击选择文件 · 支持文字层 PDF，不支持扫描识别') }}</span><input ref="fileInput" type="file" accept=".txt,.md,.pdf,.docx" required @change="selectedFileName = fileInput?.files?.[0]?.name ?? ''" /></label><label>{{ t('文档标题') }}<input v-model="title" maxlength="255" :placeholder="t('可选，留空将使用文件名称')" /></label><details class="upload-options"><summary>{{ t('版本与有效期设置') }}<AppIcon name="chevron" :size="13" /></summary><label class="check-label"><input v-model="replace" type="checkbox" />{{ t('为当前所选文档新增版本') }}</label><div class="date-grid"><label>{{ t('生效时间（当前设备时区）') }}<input v-model="from" type="datetime-local" /></label><label>{{ t('失效时间（不含该时刻）') }}<input v-model="until" type="datetime-local" /></label></div></details></div>
+      <p v-else>{{ t('待核对上传编号：{id}。文件与参数已固定，手动重试仍用此编号。', { id: pendingUpload.metadata.requestId }) }}</p>
+      <div class="upload-footer"><small><AppIcon name="shield" :size="13" />{{ t('原件私有保存 · 上传后仍需解析和发布') }}<br />{{ t('不进行 OCR，不发送企业原文到外部模型') }}</small><button class="primary-button">{{ pendingUpload ? t('使用原编号核对并重试上传') : t('保存原件与草稿') }}</button></div>
     </fieldset></form></details>
-    <template v-if="catalog"><div class="catalog-heading"><div class="catalog-intro"><span class="catalog-kicker">KNOWLEDGE LIBRARY</span><h3>需要什么资料，直接找<span class="catalog-count">{{ catalog.total }}</span></h3><p>{{ publishedCount }} 份已发布 · 点击卡片即可阅读全文，这里只展示你有权访问的有效资料。</p></div><label class="document-search"><AppIcon name="search" :size="20" /><input v-model="documentQuery" aria-label="搜索资料标题" placeholder="搜索资料标题，例如：成绩复核、宿舍报修、奖学金…" /></label></div><ul class="document-grid"><li v-for="(item, index) in visibleDocuments" :key="item.id"><button class="document-card" :class="{ selected: selected?.id === item.id }" :disabled="busy || !!vectorUncertain" @click="select(item)"><span class="document-card-top"><span class="file-symbol" :class="'tone-' + (index % 3)"><AppIcon name="file" :size="28" /></span><span class="document-status" :class="{ published: !!item.publishedVersionId }">{{ item.publishedVersionId ? '已发布' : '未发布' }}</span></span><strong class="document-card-title">{{ item.title }}</strong><small class="document-card-meta">文档 #{{ item.id }} · 修订 {{ item.revision }}</small><p class="document-card-description">{{ item.publishedVersionId ? '内容已发布，可阅读全文并核对版本。' : '尚未发布，普通成员暂时看不到这份资料。' }}</p><span class="document-card-footer"><span>{{ item.publishedVersionId ? '可阅读全文' : '等待发布' }}</span><span>打开资料<AppIcon name="chevron" :size="15" /></span></span></button></li></ul><div v-if="!visibleDocuments.length" class="documents-empty"><AppIcon :name="documentQuery ? 'search' : 'file'" :size="30" /><h4>{{ documentQuery ? '本页没有匹配的资料' : '第一份团队知识，从这里开始' }}</h4><p>{{ documentQuery ? '换个名称试试，筛选仅作用于当前页。' : canMaintain ? '点击上方「添加知识资料」，保存原件并完成解析与发布。' : '当前没有可访问文档，草稿、撤回或过期资料不会向只读成员展示。' }}</p><button v-if="documentQuery" @click="documentQuery = ''">清空筛选</button></div><div class="toolbar catalog-pagination"><small>共 {{ catalog.total }} 份当前可访问文档</small><div><button :disabled="busy || catalog.pageNum <= 1" @click="refresh(catalog.pageNum - 1)">上一页</button><span>第 {{ catalog.pageNum }} 页</span><button :disabled="busy || catalog.pageNum >= catalog.pages" @click="refresh(catalog.pageNum + 1)">下一页</button></div></div></template>
-    <article v-if="selected" class="selected-document"><div class="document-detail-heading"><div><span class="detail-eyebrow">文档详情 / 版本记录</span><h4>{{ selected.title }}</h4><p>文档 #{{ selected.id }} · 负责人 {{ ownerLabel }} · 修订 {{ selected.revision }}</p></div><span class="document-status" :class="{ published: !!selected.publishedVersionId }">{{ selected.publishedVersionId ? '有发布版本' : '未发布' }}</span></div>
-      <details v-if="canMaintain" class="owner-settings"><summary>负责人及文档管理<AppIcon name="chevron" :size="13" /></summary><p class="owner-current">当前负责人：<strong>{{ ownerLabel }}</strong></p><form @submit.prevent="owner"><fieldset :disabled="busy || unknownWrite || !!vectorUncertain"><label>负责人<select v-if="memberOptions.length" v-model="ownerId" required><option v-for="member in memberOptions" :key="member.id" :value="member.id">{{ member.username }}（#{{ member.id }}）</option><option v-if="selected.ownerMemberId && !memberOptions.some(member => member.id === selected?.ownerMemberId)" :value="selected.ownerMemberId">当前负责人（#{{ selected.ownerMemberId }}）</option></select><input v-else v-model="ownerId" inputmode="numeric" required placeholder="成员编号" /></label><button :disabled="!positiveId(ownerId)">变更负责人</button><button type="button" class="danger-button" @click="lifecycle(undefined, 'DELETE_DOCUMENT')">删除整份文档</button></fieldset></form></details>
-      <ul class="version-list"><li v-for="version in versions?.records" :key="version.id"><div class="version-heading"><span class="version-number">V{{ version.versionNo }}</span><div><strong>版本 {{ version.versionNo }} · {{ version.originalName }}</strong><p class="version-state" :class="{ 'state-published': version.publicationStatus === 'PUBLISHED', 'state-failed': version.parseStatus === 'FAILED' }">{{ labels[version.parseStatus] }} / {{ labels[version.publicationStatus] }} · {{ version.chunkCount }} 个片段<span v-if="version.failureCode"> · {{ version.failureCode }}</span></p></div></div><small>生效：{{ displayDate(version.validFromMs) }}<span class="date-divider">→</span>失效：{{ displayDate(version.validUntilMs) }}（当前设备时区）</small>
-        <p class="version-guidance"><AppIcon name="info" :size="13" />{{ version.parseStatus === 'FAILED' ? '解析未完成。请检查原件格式后，人工重试。' : version.parseStatus === 'PENDING' ? '下一步：解析原件，检查内容后再发布。' : version.publicationStatus === 'PUBLISHED' ? '已发布。资料访问仍受权限和有效期限制。' : version.publicationStatus === 'WITHDRAWN' ? '已撤回。只读成员无法再查看这个版本。' : '内容已准备好。先查看片段，确认无误后发布。' }}</p>
-        <div class="actions version-actions"><button :disabled="busy" @click="download(version)"><AppIcon name="download" :size="13" />下载原件</button><button :disabled="busy || version.parseStatus !== 'READY'" @click="showChunks(version)">查看片段</button><template v-if="canMaintain"><button v-if="version.parseStatus !== 'READY' && version.publicationStatus === 'DRAFT'" class="primary-button" :disabled="busy || unknownWrite || !!vectorUncertain || !!pendingIngest" @click="parse(version)">{{ version.parseStatus === 'FAILED' ? '人工重试解析' : '解析并入库' }}</button><button v-if="version.parseStatus === 'READY' && version.publicationStatus !== 'PUBLISHED'" class="primary-button" :disabled="busy || unknownWrite || !!vectorUncertain" @click="lifecycle(version, 'PUBLISH')">发布此版本</button><details class="more-actions"><summary>更多操作<AppIcon name="chevron" :size="12" /></summary><div><button :disabled="busy" @click="readIngest(version)">查看入库任务</button><button :disabled="busy || unknownWrite || !!vectorUncertain || !!pendingIngest || version.parseStatus !== 'READY' || version.publicationStatus !== 'DRAFT'" @click="submitIngest(version, 'REBUILD')">重建草稿片段</button><button class="danger-button" :disabled="busy || unknownWrite || !!vectorUncertain" @click="lifecycle(version, 'WITHDRAW')">撤回</button><button class="danger-button" :disabled="busy || unknownWrite || !!vectorUncertain || selected.publishedVersionId === version.id" @click="lifecycle(version, 'DELETE_VERSION')">删除此版本</button></div></details></template></div>
+    <template v-if="catalog"><div class="catalog-heading"><div class="catalog-intro"><span class="catalog-kicker">KNOWLEDGE LIBRARY</span><h3>{{ t('需要什么资料，直接找') }}<span class="catalog-count">{{ catalog.total }}</span></h3><p>{{ t('{count} 份已发布 · 点击卡片即可阅读全文，这里只展示你有权访问的有效资料。', { count: publishedCount }) }}</p></div><label class="document-search"><AppIcon name="search" :size="20" /><input v-model="documentQuery" :aria-label="t('搜索资料标题')" :placeholder="t('搜索资料标题，例如：成绩复核、宿舍报修、奖学金…')" /></label></div><ul class="document-grid"><li v-for="(item, index) in visibleDocuments" :key="item.id"><button class="document-card" :class="{ selected: selected?.id === item.id }" :disabled="busy || !!vectorUncertain" @click="select(item)"><span class="document-card-top"><span class="file-symbol" :class="'tone-' + (index % 3)"><AppIcon name="file" :size="28" /></span><span class="document-status" :class="{ published: !!item.publishedVersionId }">{{ item.publishedVersionId ? t('已发布') : t('未发布') }}</span></span><strong class="document-card-title">{{ item.title }}</strong><small class="document-card-meta">{{ t('文档 #{id} · 修订 {revision}', { id: item.id, revision: item.revision }) }}</small><p class="document-card-description">{{ item.publishedVersionId ? t('内容已发布，可阅读全文并核对版本。') : t('尚未发布，普通成员暂时看不到这份资料。') }}</p><span class="document-card-footer"><span>{{ item.publishedVersionId ? t('可阅读全文') : t('等待发布') }}</span><span>{{ t('打开资料') }}<AppIcon name="chevron" :size="15" /></span></span></button></li></ul><div v-if="!visibleDocuments.length" class="documents-empty"><AppIcon :name="documentQuery ? 'search' : 'file'" :size="30" /><h4>{{ documentQuery ? t('本页没有匹配的资料') : t('第一份团队知识，从这里开始') }}</h4><p>{{ documentQuery ? t('换个名称试试，筛选仅作用于当前页。') : canMaintain ? t('点击上方「添加知识资料」，保存原件并完成解析与发布。') : t('当前没有可访问文档，草稿、撤回或过期资料不会向只读成员展示。') }}</p><button v-if="documentQuery" @click="documentQuery = ''">{{ t('清空筛选') }}</button></div><div class="toolbar catalog-pagination"><small>{{ t('共 {count} 份当前可访问文档', { count: catalog.total }) }}</small><div><button :disabled="busy || catalog.pageNum <= 1" @click="refresh(catalog.pageNum - 1)">{{ t('上一页') }}</button><span>{{ t('第 {page} 页', { page: catalog.pageNum }) }}</span><button :disabled="busy || catalog.pageNum >= catalog.pages" @click="refresh(catalog.pageNum + 1)">{{ t('下一页') }}</button></div></div></template>
+    <article v-if="selected" class="selected-document"><div class="document-detail-heading"><div><span class="detail-eyebrow">{{ t('文档详情 / 版本记录') }}</span><h4>{{ selected.title }}</h4><p>{{ t('文档 #{id} · 负责人 {owner} · 修订 {revision}', { id: selected.id, owner: ownerLabel, revision: selected.revision }) }}</p></div><span class="document-status" :class="{ published: !!selected.publishedVersionId }">{{ selected.publishedVersionId ? t('有发布版本') : t('未发布') }}</span></div>
+      <details v-if="canMaintain" class="owner-settings"><summary>{{ t('负责人及文档管理') }}<AppIcon name="chevron" :size="13" /></summary><p class="owner-current">{{ t('当前负责人：') }}<strong>{{ ownerLabel }}</strong></p><form @submit.prevent="owner"><fieldset :disabled="busy || unknownWrite || !!vectorUncertain"><label>{{ t('负责人') }}<select v-if="memberOptions.length" v-model="ownerId" required><option v-for="member in memberOptions" :key="member.id" :value="member.id">{{ member.username }}（#{{ member.id }}）</option><option v-if="selected.ownerMemberId && !memberOptions.some(member => member.id === selected?.ownerMemberId)" :value="selected.ownerMemberId">{{ t('当前负责人（#{id}）', { id: selected.ownerMemberId }) }}</option></select><input v-else v-model="ownerId" inputmode="numeric" required :placeholder="t('成员编号')" /></label><button :disabled="!positiveId(ownerId)">{{ t('变更负责人') }}</button><button type="button" class="danger-button" @click="lifecycle(undefined, 'DELETE_DOCUMENT')">{{ t('删除整份文档') }}</button></fieldset></form></details>
+      <ul class="version-list"><li v-for="version in versions?.records" :key="version.id"><div class="version-heading"><span class="version-number">V{{ version.versionNo }}</span><div><strong>{{ t('版本 {version} · {name}', { version: version.versionNo, name: version.originalName }) }}</strong><p class="version-state" :class="{ 'state-published': version.publicationStatus === 'PUBLISHED', 'state-failed': version.parseStatus === 'FAILED' }">{{ labels[version.parseStatus] }} / {{ labels[version.publicationStatus] }} · {{ t('{count} 个片段', { count: version.chunkCount }) }}<span v-if="version.failureCode"> · {{ version.failureCode }}</span></p></div></div><small>{{ t('生效：') }}{{ displayDate(version.validFromMs) }}<span class="date-divider">→</span>{{ t('失效：') }}{{ displayDate(version.validUntilMs) }}{{ t('（当前设备时区）') }}</small>
+        <p class="version-guidance"><AppIcon name="info" :size="13" />{{ version.parseStatus === 'FAILED' ? t('解析未完成。请检查原件格式后，人工重试。') : version.parseStatus === 'PENDING' ? t('下一步：解析原件，检查内容后再发布。') : version.publicationStatus === 'PUBLISHED' ? t('已发布。资料访问仍受权限和有效期限制。') : version.publicationStatus === 'WITHDRAWN' ? t('已撤回。只读成员无法再查看这个版本。') : t('内容已准备好。先查看片段，确认无误后发布。') }}</p>
+        <div class="actions version-actions"><button :disabled="busy" @click="download(version)"><AppIcon name="download" :size="13" />{{ t('下载原件') }}</button><button :disabled="busy || version.parseStatus !== 'READY'" @click="showChunks(version)">{{ t('查看片段') }}</button><template v-if="canMaintain"><button v-if="version.parseStatus !== 'READY' && version.publicationStatus === 'DRAFT'" class="primary-button" :disabled="busy || unknownWrite || !!vectorUncertain || !!pendingIngest" @click="parse(version)">{{ version.parseStatus === 'FAILED' ? t('人工重试解析') : t('解析并入库') }}</button><button v-if="version.parseStatus === 'READY' && version.publicationStatus !== 'PUBLISHED'" class="primary-button" :disabled="busy || unknownWrite || !!vectorUncertain" @click="lifecycle(version, 'PUBLISH')">{{ t('发布此版本') }}</button><details class="more-actions"><summary>{{ t('更多操作') }}<AppIcon name="chevron" :size="12" /></summary><div><button :disabled="busy" @click="readIngest(version)">{{ t('查看入库任务') }}</button><button :disabled="busy || unknownWrite || !!vectorUncertain || !!pendingIngest || version.parseStatus !== 'READY' || version.publicationStatus !== 'DRAFT'" @click="submitIngest(version, 'REBUILD')">{{ t('重建草稿片段') }}</button><button class="danger-button" :disabled="busy || unknownWrite || !!vectorUncertain" @click="lifecycle(version, 'WITHDRAW')">{{ t('撤回') }}</button><button class="danger-button" :disabled="busy || unknownWrite || !!vectorUncertain || selected.publishedVersionId === version.id" @click="lifecycle(version, 'DELETE_VERSION')">{{ t('删除此版本') }}</button></div></details></template></div>
       </li></ul>
-      <section v-if="canMaintain" aria-label="检索索引维护">
-        <details class="index-settings"><summary><AppIcon name="layers" :size="17" /><span>检索索引<small>高级维护 · 平时不用管</small></span><AppIcon name="chevron" :size="14" /></summary>
-        <p class="index-plain"><strong>这是什么：</strong>资料发布之后，系统要在后台为它建一份检索索引，问答才能搜到里面的内容。这个过程通常自动完成，你日常不需要进来。</p>
-        <p class="index-plain"><strong>什么时候需要来：</strong>① 资料已发布，但问答里搜不到它；② 这里显示「建立失败」或「超时未完成」，需要重来一次。</p>
-        <div class="actions"><button v-for="version in versions?.records" :key="version.id" :disabled="busy || !!vectorUncertain" @click="openVector(version)">处理版本 {{ version.versionNo }} 的检索索引</button></div>
+      <section v-if="canMaintain" :aria-label="t('检索索引维护')">
+        <details class="index-settings"><summary><AppIcon name="layers" :size="17" /><span>{{ t('检索索引') }}<small>{{ t('高级维护 · 平时不用管') }}</small></span><AppIcon name="chevron" :size="14" /></summary>
+        <p class="index-plain"><strong>{{ t('这是什么：') }}</strong>{{ t('资料发布之后，系统要在后台为它建一份检索索引，问答才能搜到里面的内容。这个过程通常自动完成，你日常不需要进来。') }}</p>
+        <p class="index-plain"><strong>{{ t('什么时候需要来：') }}</strong>{{ t('① 资料已发布，但问答里搜不到它；② 这里显示「建立失败」或「超时未完成」，需要重来一次。') }}</p>
+        <div class="actions"><button v-for="version in versions?.records" :key="version.id" :disabled="busy || !!vectorUncertain" @click="openVector(version)">{{ t('处理版本 {version} 的检索索引', { version: version.versionNo }) }}</button></div>
         <template v-if="vectorVersion">
-          <p class="index-plain">正在处理版本 {{ vectorVersion.versionNo }}。建立过程最长约 2 分钟，页面会自动刷新结果，最长等待约 2 分钟。</p>
-          <p class="index-plain">如果中途刷新或离开页面，任务不会中断，只是这里不再显示进度。想接着看就复制下面的编号，回到同一文档和版本填进来查询。编号不会存到浏览器里，离开前请自己复制。</p>
-          <label>上次的索引任务编号（可选）<input id="vector-task-id" v-model="vectorId" maxlength="36" :disabled="busy || !!pendingVector || vectorActive || !!vectorUncertain" placeholder="粘贴之前的任务编号，只查询不新建" @input="stopVectorPolling(); vectorTask = undefined" /></label>
-          <div class="actions"><button :disabled="busy || unknownWrite || !!vectorUncertain || vectorActive || vectorVersion.parseStatus !== 'READY' || selected.publishedVersionId !== vectorVersion.id" @click="submitVector">为这个版本建立检索索引</button><button :disabled="busy || !workspaceUuid(vectorId)" @click="readVector()">按编号查进度</button><button :disabled="busy || !vectorActive || !!vectorUncertain" @click="cancelVector">取消建立</button><button @click="stopVectorPolling(); vectorNotice = '已停止在这里刷新进度；后台任务仍会继续跑完。'">停止刷新进度</button></div>
+          <p class="index-plain">{{ t('正在处理版本 {version}。建立过程最长约 2 分钟，页面会自动刷新结果，最长等待约 2 分钟。', { version: vectorVersion.versionNo }) }}</p>
+          <p class="index-plain">{{ t('如果中途刷新或离开页面，任务不会中断，只是这里不再显示进度。任务编号会自动填入下面的输入框（浏览器不保存它，重要的话先复制到别处）。回到同一文档和版本，点「按编号查进度」就能接着看。') }}</p>
+          <label>{{ t('索引任务编号（提交后自动填入）') }}<input id="vector-task-id" v-model="vectorId" maxlength="36" :disabled="busy || !!pendingVector || vectorActive || !!vectorUncertain" :placeholder="t('提交建立后自动填入；重新查询时保持不动即可')" @input="stopVectorPolling(); vectorTask = undefined" /></label>
+          <div class="actions"><button :disabled="busy || unknownWrite || !!vectorUncertain || vectorActive || vectorVersion.parseStatus !== 'READY' || selected.publishedVersionId !== vectorVersion.id" @click="submitVector">{{ t('为这个版本建立检索索引') }}</button><button :disabled="busy || !workspaceUuid(vectorId)" @click="readVector()">{{ t('按编号查进度') }}</button><button :disabled="busy || !vectorActive || !!vectorUncertain" @click="cancelVector">{{ t('取消建立') }}</button><button @click="stopVectorPolling(); vectorNotice = t('已停止在这里刷新进度；后台任务仍会继续跑完。')">{{ t('停止刷新进度') }}</button></div>
           <p v-if="vectorNotice" class="feedback vector-notice" role="status">{{ vectorNotice }}</p>
-          <p v-if="vectorUncertain" class="feedback error">上次操作结果还没确认：{{ vectorUncertain === 'TASK' ? '请先按编号查进度' : '请先查看当前索引状态' }}。刷新页面不会解除这个限制。</p>
-          <div v-if="vectorTask" class="vector-job"><p>{{ indexJobLabels[vectorTask.status] ?? vectorTask.status }} · {{ vectorTask.message }}</p><small>已完成 {{ vectorTask.verifiedChunks }}/{{ vectorTask.expectedChunks }} 个片段<span v-if="vectorTask.failureCode"> · 失败原因 {{ vectorTask.failureCode }}</span></small></div>
-          <div class="actions"><button :disabled="busy" @click="readPointer">查看当前是否已启用检索</button><button :disabled="busy || unknownWrite || !!vectorUncertain || !vectorPointer || vectorTask?.status !== 'VERIFIED' || selected.publishedVersionId !== vectorTask.versionId" @click="changeVectorPointer('publish')">确认启用检索</button><button :disabled="busy || unknownWrite || !!vectorUncertain || !vectorPointer || !['READY', 'STALE'].includes(vectorPointer.status)" @click="changeVectorPointer('withdraw')">关闭检索</button></div>
-          <p v-if="vectorPointer" class="vector-publication"><strong>{{ indexPointerLabels[vectorPointer.status] ?? vectorPointer.status }}</strong><small>第 {{ vectorPointer.revision }} 次变更{{ vectorPointer.updatedMs ? ' · ' + new Date(Number(vectorPointer.updatedMs)).toLocaleString('zh-CN') : '' }}</small></p>
+          <p v-if="vectorUncertain" class="feedback error">{{ t('上次操作结果还没确认：{action}。刷新页面不会解除这个限制。', { action: vectorUncertain === 'TASK' ? t('请先按编号查进度') : t('请先查看当前索引状态') }) }}</p>
+          <div v-if="vectorTask" class="vector-job"><p>{{ indexJobLabels[vectorTask.status] ?? vectorTask.status }} · {{ vectorTask.message }}</p><small>{{ t('任务编号：{id}', { id: vectorTask.id }) }} · {{ t('已完成 {done}/{total} 个片段', { done: vectorTask.verifiedChunks, total: vectorTask.expectedChunks }) }}<span v-if="vectorTask.failureCode"> · {{ t('失败原因 {code}', { code: vectorTask.failureCode }) }}</span></small></div>
+          <div class="actions"><button :disabled="busy" @click="readPointer">{{ t('查看当前是否已启用检索') }}</button><button :disabled="busy || unknownWrite || !!vectorUncertain || !vectorPointer || vectorTask?.status !== 'VERIFIED' || selected.publishedVersionId !== vectorTask.versionId" @click="changeVectorPointer('publish')">{{ t('确认启用检索') }}</button><button :disabled="busy || unknownWrite || !!vectorUncertain || !vectorPointer || !['READY', 'STALE'].includes(vectorPointer.status)" @click="changeVectorPointer('withdraw')">{{ t('关闭检索') }}</button></div>
+          <p v-if="vectorPointer" class="vector-publication"><strong>{{ indexPointerLabels[vectorPointer.status] ?? vectorPointer.status }}</strong><small>{{ t('第 {revision} 次变更', { revision: vectorPointer.revision }) }}{{ vectorPointer.updatedMs ? ' · ' + new Date(Number(vectorPointer.updatedMs)).toLocaleString('zh-CN') : '' }}</small></p>
         </template></details>
       </section>
-      <div v-if="versions" class="toolbar"><button :disabled="busy || versions.pageNum <= 1" @click="versionPage(versions.pageNum - 1)">更早页</button><span>版本第 {{ versions.pageNum }} 页</span><button :disabled="busy || versions.pageNum >= versions.pages" @click="versionPage(versions.pageNum + 1)">更多版本</button></div>
+      <div v-if="versions" class="toolbar"><button :disabled="busy || versions.pageNum <= 1" @click="versionPage(versions.pageNum - 1)">{{ t('更早页') }}</button><span>{{ t('版本第 {page} 页', { page: versions.pageNum }) }}</span><button :disabled="busy || versions.pageNum >= versions.pages" @click="versionPage(versions.pageNum + 1)">{{ t('更多版本') }}</button></div>
     </article>
-    <details v-if="fragments && fragmentVersion" class="fragment-panel" :open="fragmentOpen" @toggle="onFragmentToggle" aria-label="文档片段"><summary><span class="fragment-summary-icon"><AppIcon name="file" :size="18" /></span><span><strong>原文片段 · 版本 {{ fragmentVersion.versionNo }}</strong><small>用于核对切分、行号与字符范围，阅读全文请点上方资料卡片</small></span><AppIcon name="chevron" :size="15" /></summary><div class="fragment-body"><article v-for="part in fragments.records" :key="part.id"><small>片段 {{ part.chunkIndex }} · 第{{ part.startLine }}—{{ part.endLine }}行 · 字符[{{ part.startOffset }}, {{ part.endOffset }})</small><pre>{{ part.content }}</pre></article><div class="toolbar"><button :disabled="busy || fragments.pageNum <= 1" @click="showChunks(fragmentVersion, fragments.pageNum - 1)">上一页片段</button><button :disabled="busy || fragments.pageNum >= fragments.pages" @click="showChunks(fragmentVersion, fragments.pageNum + 1)">下一页片段</button></div></div></details>
+    <details v-if="fragments && fragmentVersion" class="fragment-panel" :open="fragmentOpen" @toggle="onFragmentToggle" aria-label="文档片段"><summary><span class="fragment-summary-icon"><AppIcon name="file" :size="18" /></span><span><strong>{{ t('原文片段 · 版本 {version}', { version: fragmentVersion.versionNo }) }}</strong><small>{{ t('用于核对切分、行号与字符范围，阅读全文请点上方资料卡片') }}</small></span><AppIcon name="chevron" :size="15" /></summary><div class="fragment-body"><article v-for="part in fragments.records" :key="part.id"><small>{{ t('片段 {index} · 第{start}—{end}行 · 字符[{from}, {to})', { index: part.chunkIndex, start: part.startLine, end: part.endLine, from: part.startOffset, to: part.endOffset }) }}</small><pre>{{ part.content }}</pre></article><div class="toolbar"><button :disabled="busy || fragments.pageNum <= 1" @click="showChunks(fragmentVersion, fragments.pageNum - 1)">{{ t('上一页片段') }}</button><button :disabled="busy || fragments.pageNum >= fragments.pages" @click="showChunks(fragmentVersion, fragments.pageNum + 1)">{{ t('下一页片段') }}</button></div></div></details>
 
     <Teleport to="body">
       <div v-if="readerOpen && selected" class="reader-layer">
@@ -508,33 +510,33 @@ onUnmounted(() => { alive = false; window.removeEventListener('keydown', onKeydo
             <div>
               <span class="reader-kicker">KNOWLEDGE READER</span>
               <h2>{{ selected.title }}</h2>
-              <p v-if="readerVersion">版本 V{{ readerVersion.versionNo }} · {{ readerVersion.originalName }} · {{ readerVersion.chunkCount }} 个片段</p>
-              <p v-else>当前没有可阅读的有效版本</p>
+              <p v-if="readerVersion">{{ t('版本 V{version} · {name} · {count} 个片段', { version: readerVersion.versionNo, name: readerVersion.originalName, count: readerVersion.chunkCount }) }}</p>
+              <p v-else>{{ t('当前没有可阅读的有效版本') }}</p>
             </div>
             <div class="reader-tools">
-              <button type="button" :disabled="busy || !readerVersion" @click="downloadReader"><AppIcon name="download" :size="16" />下载原件</button>
-              <button type="button" class="reader-close" aria-label="关闭阅读" @click="closeReader"><AppIcon name="close" :size="20" /></button>
+              <button type="button" :disabled="busy || !readerVersion" @click="downloadReader"><AppIcon name="download" :size="16" />{{ t('下载原件') }}</button>
+              <button type="button" class="reader-close" :aria-label="t('关闭阅读')" @click="closeReader"><AppIcon name="close" :size="20" /></button>
             </div>
           </header>
           <div class="reader-body">
-            <div v-if="readerLoading && !readerChunks.length" class="reader-placeholder"><span class="reader-spinner"></span><p>正在读取正文…</p></div>
-            <div v-else-if="readerError && !readerChunks.length" class="reader-placeholder"><AppIcon name="info" :size="38" /><h3>正文读取失败</h3><p>{{ readerError }}</p><button type="button" @click="readerVersion && loadReader(readerVersion, 1, true)">重新读取</button></div>
-            <div v-else-if="!readerChunks.length" class="reader-placeholder"><AppIcon name="file" :size="38" /><h3>暂时没有可阅读的正文</h3><p>{{ selected.publishedVersionId ? '这份资料还没有完成解析的发布版本，请联系资料维护者。' : '这份资料尚未发布，普通成员看不到内容。' }}</p></div>
+            <div v-if="readerLoading && !readerChunks.length" class="reader-placeholder"><span class="reader-spinner"></span><p>{{ t('正在读取正文…') }}</p></div>
+            <div v-else-if="readerError && !readerChunks.length" class="reader-placeholder"><AppIcon name="info" :size="38" /><h3>{{ t('正文读取失败') }}</h3><p>{{ readerError }}</p><button type="button" @click="readerVersion && loadReader(readerVersion, 1, true)">{{ t('重新读取') }}</button></div>
+            <div v-else-if="!readerChunks.length" class="reader-placeholder"><AppIcon name="file" :size="38" /><h3>{{ t('暂时没有可阅读的正文') }}</h3><p>{{ selected.publishedVersionId ? t('这份资料还没有完成解析的发布版本，请联系资料维护者。') : t('这份资料尚未发布，普通成员看不到内容。') }}</p></div>
             <div v-else class="reader-content">
-              <section v-for="part in readerChunks" :key="part.id" class="reader-chunk"><span class="reader-chunk-index">片段 {{ part.chunkIndex }} · 第 {{ part.startLine }}—{{ part.endLine }} 行</span><p class="reader-text">{{ part.content }}</p></section>
+              <section v-for="part in readerChunks" :key="part.id" class="reader-chunk"><span class="reader-chunk-index">{{ t('片段 {index} · 第 {start}—{end} 行', { index: part.chunkIndex, start: part.startLine, end: part.endLine }) }}</span><p class="reader-text">{{ part.content }}</p></section>
               <p v-if="readerError" class="reader-inline-error">{{ readerError }}</p>
-              <button v-if="readerPage < readerPages" type="button" class="reader-more" :disabled="readerLoading" @click="moreReader">{{ readerLoading ? '正在加载…' : `继续阅读下一页（${readerPage} / ${readerPages}）` }}</button>
-              <p v-else class="reader-end">已读完当前允许访问的全部 {{ readerChunks.length }} 个片段。</p>
+              <button v-if="readerPage < readerPages" type="button" class="reader-more" :disabled="readerLoading" @click="moreReader">{{ readerLoading ? t('正在加载…') : t('继续阅读下一页（{page} / {pages}）', { page: readerPage, pages: readerPages }) }}</button>
+              <p v-else class="reader-end">{{ t('已读完当前允许访问的全部 {count} 个片段。', { count: readerChunks.length }) }}</p>
             </div>
           </div>
           <aside class="reader-rail">
-            <div class="rail-block"><span class="rail-label">文档编号</span><strong>#{{ selected.id }}</strong><small>修订 {{ selected.revision }}</small></div>
-            <div class="rail-block"><span class="rail-label">负责人</span><strong>{{ ownerLabel }}</strong><small>负责维护这份资料</small></div>
-            <div v-if="readerVersion" class="rail-block"><span class="rail-label">当前版本</span><strong>V{{ readerVersion.versionNo }}</strong><small>{{ labels[readerVersion.publicationStatus] }} · {{ readerVersion.chunkCount }} 个片段</small></div>
-            <div v-if="readerVersion" class="rail-block"><span class="rail-label">有效期</span><strong>{{ displayDate(readerVersion.validFromMs) }}</strong><small>至 {{ displayDate(readerVersion.validUntilMs) }}</small></div>
-            <div class="rail-block"><span class="rail-label">阅读进度</span><strong>{{ readerChunks.length }} 个片段</strong><small v-if="readerPages">第 {{ readerPage }} / {{ readerPages }} 页</small><small v-else>尚未读取正文</small></div>
-            <div class="rail-block"><span class="rail-label">访问说明</span><small class="rail-note">只展示当前权限允许访问的有效版本。上传、解析与发布等管理操作在资料库下方。</small></div>
-            <button v-if="canMaintain" type="button" class="rail-admin" :disabled="busy" @click="closeReader">回到资料库管理区<AppIcon name="chevron" :size="15" /></button>
+            <div class="rail-block"><span class="rail-label">{{ t('文档编号') }}</span><strong>#{{ selected.id }}</strong><small>{{ t('修订 {revision}', { revision: selected.revision }) }}</small></div>
+            <div class="rail-block"><span class="rail-label">{{ t('负责人') }}</span><strong>{{ ownerLabel }}</strong><small>{{ t('负责维护这份资料') }}</small></div>
+            <div v-if="readerVersion" class="rail-block"><span class="rail-label">{{ t('当前版本') }}</span><strong>V{{ readerVersion.versionNo }}</strong><small>{{ labels[readerVersion.publicationStatus] }} · {{ t('{count} 个片段', { count: readerVersion.chunkCount }) }}</small></div>
+            <div v-if="readerVersion" class="rail-block"><span class="rail-label">{{ t('有效期') }}</span><strong>{{ displayDate(readerVersion.validFromMs) }}</strong><small>{{ t('至 {date}', { date: displayDate(readerVersion.validUntilMs) }) }}</small></div>
+            <div class="rail-block"><span class="rail-label">{{ t('阅读进度') }}</span><strong>{{ t('{count} 个片段', { count: readerChunks.length }) }}</strong><small v-if="readerPages">{{ t('第 {page} / {pages} 页', { page: readerPage, pages: readerPages }) }}</small><small v-else>{{ t('尚未读取正文') }}</small></div>
+            <div class="rail-block"><span class="rail-label">{{ t('访问说明') }}</span><small class="rail-note">{{ t('只展示当前权限允许访问的有效版本。上传、解析与发布等管理操作在资料库下方。') }}</small></div>
+            <button v-if="canMaintain" type="button" class="rail-admin" :disabled="busy" @click="closeReader">{{ t('回到资料库管理区') }}<AppIcon name="chevron" :size="15" /></button>
           </aside>
         </article>
       </div>

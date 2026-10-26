@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEnterpriseClient } from '../src/enterprise.ts';
-import { answerView, evidenceView } from '../src/knowledge-answer.ts';
+import { answerView, crossAnswerView, evidenceView } from '../src/knowledge-answer.ts';
 
 const content = '虚构餐补每日30元，需主管审批。';
 const evidence = { chunkId: '9007199254740993', documentId: '2', versionId: '3', versionNo: 1,
@@ -11,6 +11,60 @@ const answer = { mode: 'SYNTHETIC_MODEL', status: 'ANSWERED', message: '仅用�
     { text: '每日30元。', citations: [{ sourceId: 1, evidence, quote: '虚构餐补每日30元' }] }
   ] }] };
 const ok = data => Response.json({ code: 0, data });
+
+function crossAnswer(count = 9) {
+  const schoolContent = '忘记校园网密码时，通过官方入口核验预留联系方式后重置。';
+  const sources = Array.from({ length: count }, (_, index) => ({ spaceId: String(401 + Math.floor(index / 2)),
+    spaceName: '校园网络与信息服务', evidence: { ...evidence, chunkId: String(index + 1), title: '校园网密码重置指南',
+      content: schoolContent, endOffset: schoolContent.length } }));
+  return { ...structuredClone(answer), evidence: sources, parts: [{ id: 1, question: '校园网密码怎么重置？',
+    status: 'ANSWERED', gaps: [], paragraphs: [{ text: '通过官方入口核验预留联系方式后重置密码。',
+      citations: [{ sourceId: count, evidence: sources[count - 1].evidence, quote: schoolContent }] }] }] };
+}
+
+test('跨空间回答接受7至9条依据，第9条引用保留来源空间与原文', () => {
+  for (const count of [6, 7, 8, 9]) {
+    const value = crossAnswer(count);
+    const result = crossAnswerView(value);
+    assert.equal(result.evidence.length, count);
+    assert.equal(result.parts[0].paragraphs[0].citations[0].sourceId, count);
+    assert.deepEqual(result.parts[0].paragraphs[0].citations[0].evidence, value.evidence[count - 1].evidence);
+  }
+});
+
+test('跨空间9条依据支持本地摘录及模型失败，不能伪装成生成成功', () => {
+  for (const [mode, status] of [['LOCAL_EVIDENCE', 'EVIDENCE_ONLY'], ['SYNTHETIC_MODEL', 'MODEL_UNAVAILABLE']]) {
+    const value = crossAnswer();
+    value.mode = mode; value.status = status;
+    value.parts = [{ id: 1, question: '校园网密码怎么重置？', status, paragraphs: [], gaps: ['请核对原文。'] }];
+    assert.equal(crossAnswerView(value).status, status);
+  }
+});
+
+test('跨空间超出9条、伪造第9条引文、来源不一致及重复片段仍拒绝；单空间保持6条上限', () => {
+  assert.throws(() => crossAnswerView(crossAnswer(10)), /格式/);
+  const value = crossAnswer();
+  const forged = structuredClone(value); forged.parts[0].paragraphs[0].citations[0].quote = '不在原文中的规定';
+  assert.throws(() => crossAnswerView(forged), /格式/);
+  const changed = structuredClone(value);
+  changed.parts[0].paragraphs[0].citations[0].evidence = { ...changed.evidence[8].evidence, title: '另一份制度' };
+  assert.throws(() => crossAnswerView(changed), /格式/);
+  const duplicated = structuredClone(value); duplicated.evidence[8] = duplicated.evidence[0];
+  assert.throws(() => crossAnswerView(duplicated), /格式/);
+  assert.throws(() => answerView({ ...value, evidence: value.evidence.map(item => item.evidence) }), /格式/);
+});
+
+test('企业跨空间客户端展示9条合法依据，单次请求不因解析重复调用模型', async () => {
+  const value = crossAnswer(); const calls = [];
+  const api = createEnterpriseClient(async (path, init) => {
+    calls.push({ path, init });
+    return path.endsWith('/csrf') ? ok({ headerName: 'X-CSRF-TOKEN', token: 'synthetic-token' }) : ok(value);
+  });
+  assert.deepEqual(await api.crossAnswer('1', '校园网密码怎么重置？'), crossAnswerView(value));
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].path, '/api/enterprises/1/answers');
+  assert.deepEqual(JSON.parse(calls[1].init.body), { question: '校园网密码怎么重置？' });
+});
 
 test('回答保留Long字符串和原文坐标，引用指向服务端返回的同一份依据', () => {
   const result = answerView(answer);

@@ -1,6 +1,9 @@
 # 公共配置：所有环境共享。环境差异项放到 application-{profile}.yml
 server:
   port: 8080
+  # 生产经 Nginx 反代：让 Tomcat 按 X-Forwarded-For 还原真实客户端 IP，
+  # 否则登录限流按 127.0.0.1 计数，全体访客共享 10 次/分钟的配额。
+  forward-headers-strategy: native
   servlet:
     context-path: /
     session:

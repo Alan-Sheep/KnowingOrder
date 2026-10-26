@@ -188,11 +188,11 @@ src/main/resources/
 
 `POST /api/products/search`，JSON入参 `{"keyword":"咖啡"}`，返回 `Result<ProductSearchResult>`。当前 `provider=MOCK`、`simulated=true`，`notice`说明虚构目录；`items`包含 `id/title/merchant/referencePrice/currency/linkType/jumpUrl`。未知关键词返回空列表；非法输入或接口故障明确失败，不自动生成成功商品。
 
-`ProductSearchController`只依赖 `ProductSearchService`；开发替身 `MockProductSearchService`只在dev且 `knowingorder.products.provider=mock`（未设置时dev默认mock）装配，无需新增凭据或改YAML。设置尚未实现的 `taobao` 模式会因缺少适配器明确启动失败，不静默回退。生产profile没有该开发Controller或Mock，真实渠道实现及企业生产入口仍待后续评审与联调。
+`ProductSearchController`只依赖 `ProductSearchService`；开发替身 `MockProductSearchService`在 `knowingorder.products.provider=mock`（未设置时默认mock）时装配，**不再绑定 dev profile**——它不查库、不发外部请求、不产生订单，prod 下同样可用，否则只开放 IP 演示的环境里商品入口会整个消失。设置尚未实现的 `taobao` 模式会因缺少适配器明确启动失败，不静默回退。真实渠道实现及企业生产入口仍待后续评审与联调。
 
 本机保护沿用 `LocalChatFilter`，商品路径同样拒绝远程/转发请求并限制8KiB请求体；关键词最多80个UTF-16代码单元，界面限制与后端一致。结果列表不可变、并发查询无共享可变状态；不写库，无订单或额度副作用，因而本单元不引入业务事务或重试。
 
-当前固定链接 `https://www.taobao.com/` 仅用于打开平台首页，不对应真实商品详情、不携带推广归因。实际店铺、售价、库存与履约未知。没有淘宝API调用、下单、支付或补贴动作，也未将商品查询接入现有问答Agent工具链。
+跳转目的地是**淘宝搜索页** `https://s.taobao.com/search?q=<商品名>`（`linkType=PLATFORM_SEARCH`），关键词取自条目的真实名称并整体 UTF-8 百分号编码，查询串只带一个 `q`、不携带推广归因。示例商品本身是虚构的，不存在可直达的真实详情页，把关键词带到搜索页是当前唯一不撒谎的做法；搜索结果、店铺、售价、库存与履约全部由平台决定，与示例价无关。没有淘宝API调用、下单、支付或补贴动作，也未将商品查询接入现有问答Agent工具链。
 
 可在IDEA重启原dev运行配置后，通过前端侧栏“商品查询”或以下命令验证：
 

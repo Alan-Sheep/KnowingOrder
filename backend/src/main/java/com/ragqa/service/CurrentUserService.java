@@ -17,4 +17,15 @@ public interface CurrentUserService {
      * @throws com.ragqa.exception.BusinessException 主体缺失、类型不匹配或账号不可用，业务码为401
      */
     Long requireUserId(Principal principal);
+
+    /** 当前账号的最小展示信息：用户名与展示名（昵称为空时回退用户名），不含口令散列等敏感字段。 */
+    record AccountIdentity(String username, String displayName) { }
+
+    /**
+     * 按已复核的账号编号读取展示信息。
+     *
+     * @param userId 已通过 {@link #requireUserId(Principal)} 复核的账号编号
+     * @return 用户名与展示名；账号不可用时抛业务码 401
+     */
+    AccountIdentity identity(Long userId);
 }

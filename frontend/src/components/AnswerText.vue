@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { t } from '../i18n';
 import type { Source } from '../types';
 
 const props = defineProps<{ text: string; sources: Source[] }>();
@@ -19,7 +20,7 @@ const paragraphs = computed(() => props.text.split(/\n\s*\n/).filter(Boolean).ma
   <div class="answer-text">
     <p v-for="(paragraph, index) in paragraphs" :key="index">
       <template v-for="(token, tokenIndex) in paragraph" :key="tokenIndex">
-        <button v-if="token.id" class="citation" :aria-label="`查看参考来源 ${token.number}`"
+        <button v-if="token.id" class="citation" :aria-label="t('查看参考来源 {number}', { number: token.number })"
           @click="emit('citation', token.id)">{{ token.number }}</button>
         <span v-else>{{ token.text }}</span>
       </template>

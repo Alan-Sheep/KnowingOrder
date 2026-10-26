@@ -26,14 +26,10 @@ export function evidenceView(value: unknown): Evidence {
     startOffset: value.startOffset, endOffset: value.endOffset, startLine: value.startLine, endLine: value.endLine };
 }
 
-export function answerView(value: unknown): KnowledgeAnswer {
-  if (!object(value) || !['LOCAL_EVIDENCE', 'SYNTHETIC_MODEL'].includes(String(value.mode))
-    || !statuses.includes(String(value.status))
-    || !text(value.message, 600) || !integer(value.elapsedMs) || !Array.isArray(value.evidence) || value.evidence.length > 6
-    || !Array.isArray(value.parts) || value.parts.length < 1 || value.parts.length > 3) return invalid();
-  const evidence = value.evidence.map(evidenceView);
-  if (new Set(evidence.map(item => item.chunkId)).size !== evidence.length) return invalid();
-  const parts: AnswerPart[] = value.parts.map((part, index) => {
+/** 部分校验在单空间与跨空间回答间完全一致，抽出的evidence按sourceId-1对位。 */
+function partsView(value: unknown, evidence: Evidence[]): AnswerPart[] {
+  if (!Array.isArray(value)) return invalid();
+  return value.map((part, index) => {
     if (!object(part) || part.id !== index + 1 || !text(part.question, 1200)
       || !statuses.includes(String(part.status))
       || !Array.isArray(part.paragraphs) || part.paragraphs.length > 3
@@ -41,13 +37,12 @@ export function answerView(value: unknown): KnowledgeAnswer {
     const paragraphs: Paragraph[] = part.paragraphs.map(paragraph => {
       if (!object(paragraph) || !text(paragraph.text, 1300) || !Array.isArray(paragraph.citations)
         || paragraph.citations.length < 1 || paragraph.citations.length > 3) return invalid();
-      const seen = new Set<number>();
+      // 允许同段引用同一出处的多条原句（后端已按此契约放行）。
       const citations: Citation[] = paragraph.citations.map(citation => {
         if (!object(citation) || !integer(citation.sourceId, 1) || citation.sourceId > evidence.length
-          || seen.has(citation.sourceId) || !text(citation.quote, 500)) return invalid();
+          || !text(citation.quote, 500)) return invalid();
         const source = evidence[citation.sourceId - 1]!;
         if (!source.content.includes(citation.quote) || JSON.stringify(evidenceView(citation.evidence)) !== JSON.stringify(source)) return invalid();
-        seen.add(citation.sourceId);
         return { sourceId: citation.sourceId, quote: citation.quote, evidence: source };
       });
       return { text: paragraph.text, citations };
@@ -56,6 +51,39 @@ export function answerView(value: unknown): KnowledgeAnswer {
     if (generated !== (paragraphs.length > 0) || (part.status === 'ANSWERED') !== (part.gaps.length === 0)) return invalid();
     return { id: part.id as number, question: part.question, status: String(part.status), paragraphs, gaps: part.gaps as string[] };
   });
+}
+
+export function answerView(value: unknown): KnowledgeAnswer {
+  if (!object(value) || !['LOCAL_EVIDENCE', 'SYNTHETIC_MODEL'].includes(String(value.mode))
+    || !statuses.includes(String(value.status))
+    || !text(value.message, 600) || !integer(value.elapsedMs) || !Array.isArray(value.evidence) || value.evidence.length > 6
+    || !Array.isArray(value.parts) || value.parts.length < 1 || value.parts.length > 3) return invalid();
+  const evidence = value.evidence.map(evidenceView);
+  if (new Set(evidence.map(item => item.chunkId)).size !== evidence.length) return invalid();
+  const parts = partsView(value.parts, evidence);
+  if (value.mode === 'LOCAL_EVIDENCE' && (parts.some(part => part.paragraphs.length)
+    || !['EVIDENCE_ONLY', 'NO_EVIDENCE', 'SCOPE_UNAVAILABLE'].includes(String(value.status)))) return invalid();
+  return { mode: String(value.mode), status: String(value.status), message: value.message, parts, evidence, elapsedMs: value.elapsedMs };
+}
+
+/** 跨空间回答：证据额外携带来源空间，前端按spaceId取回证据详情。 */
+export interface SpaceEvidence { spaceId: string; spaceName: string; evidence: Evidence }
+export interface CrossAnswer { mode: string; status: string; message: string; parts: AnswerPart[]; evidence: SpaceEvidence[]; elapsedMs: number }
+
+function spaceEvidenceView(value: unknown): SpaceEvidence {
+  if (!object(value) || !id(value.spaceId) || !text(value.spaceName, 255)) return invalid();
+  return { spaceId: value.spaceId, spaceName: value.spaceName, evidence: evidenceView(value.evidence) };
+}
+
+export function crossAnswerView(value: unknown): CrossAnswer {
+  if (!object(value) || !['LOCAL_EVIDENCE', 'SYNTHETIC_MODEL'].includes(String(value.mode))
+    || !statuses.includes(String(value.status))
+    // 跨空间合并最多9条依据；单空间answerView仍保持6条，不能混用两种容量契约。
+    || !text(value.message, 600) || !integer(value.elapsedMs) || !Array.isArray(value.evidence) || value.evidence.length > 9
+    || !Array.isArray(value.parts) || value.parts.length < 1 || value.parts.length > 3) return invalid();
+  const evidence = value.evidence.map(spaceEvidenceView);
+  if (new Set(evidence.map(item => item.evidence.chunkId)).size !== evidence.length) return invalid();
+  const parts = partsView(value.parts, evidence.map(item => item.evidence));
   if (value.mode === 'LOCAL_EVIDENCE' && (parts.some(part => part.paragraphs.length)
     || !['EVIDENCE_ONLY', 'NO_EVIDENCE', 'SCOPE_UNAVAILABLE'].includes(String(value.status)))) return invalid();
   return { mode: String(value.mode), status: String(value.status), message: value.message, parts, evidence, elapsedMs: value.elapsedMs };

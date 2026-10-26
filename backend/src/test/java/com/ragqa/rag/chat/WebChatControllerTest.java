@@ -233,12 +233,13 @@ class WebChatControllerTest {
     }
 
     @Test
-    void developmentEndpointIsAbsentFromProductionProfile() {
+    void publicEndpointIsRegisteredInProductionProfile() {
         new ApplicationContextRunner().withPropertyValues("spring.profiles.active=prod")
                 .withBean(WebChatService.class, () -> service).withBean(ObjectMapper.class, () -> json)
                 .withUserConfiguration(WebChatController.class, LocalChatFilter.class)
                 .run(context -> {
-                    assertThat(context).doesNotHaveBean(WebChatController.class);
+                    // 公开联网问答已在生产开放（Nginx 限流防滥用）；仅本机开发守卫仍保持 dev 专属。
+                    assertThat(context).hasBean("webChatController");
                     assertThat(context).doesNotHaveBean(LocalChatFilter.class);
                 });
     }

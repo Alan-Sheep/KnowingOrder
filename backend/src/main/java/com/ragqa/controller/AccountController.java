@@ -35,7 +35,11 @@ public class AccountController {
     @GetMapping("/me")
     public Result<Map<String, Object>> me(
             @AuthenticationPrincipal(expression = "identity") AuthenticatedUserPrincipal identity) {
-        return Result.ok(Map.of("userId", users.requireUserId(identity),
+        Long userId = users.requireUserId(identity);
+        var account = users.identity(userId);
+        return Result.ok(Map.of("userId", userId,
+                "username", account.username(),
+                "displayName", account.displayName(),
                 "enterprises", members.listWorkspaces(identity)));
     }
 }

@@ -71,12 +71,12 @@ public class KnowledgeAnswerComposer {
                 require(paragraph.path("citations").isArray() && !paragraph.path("citations").isEmpty()
                         && paragraph.path("citations").size() <= 3);
                 var citations = new ArrayList<Citation>();
-                var seen = new HashSet<Integer>();
                 for (JsonNode citation : paragraph.path("citations")) {
                     fields(citation, "sourceId", "quote");
                     require(citation.path("sourceId").isInt());
                     int id = citation.path("sourceId").intValue();
-                    require(id >= 1 && id <= evidence.size() && seen.add(id));
+                    // 允许同段引用同一出处的多条原句（外部模型常见习惯）；只要求出处编号有效。
+                    require(id >= 1 && id <= evidence.size());
                     String quote = text(citation, "quote", 250, false);
                     require(quote.codePointCount(0, quote.length()) >= 4 && evidence.get(id - 1).content().contains(quote));
                     citations.add(new Citation(id, evidence.get(id - 1), quote));

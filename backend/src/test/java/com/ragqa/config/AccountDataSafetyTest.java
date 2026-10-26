@@ -29,7 +29,7 @@ class AccountDataSafetyTest {
     @Test
     void passwordAndHashNeverAppearInDtoJsonOrLogStringAndCredentialsCanBeErased() throws Exception {
         var json = new ObjectMapper();
-        var request = new NewEmployeeRequest("test_name", "synthetic-not-a-real-secret");
+        var request = new NewEmployeeRequest("test_name", "synthetic-not-a-real-secret", null);
         assertThat(json.writeValueAsString(request)).doesNotContain(request.password(), "password");
         assertThat(request.toString()).doesNotContain(request.password());
         var user = new SysUser();

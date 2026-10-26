@@ -17,13 +17,13 @@ export default defineConfig({
         timeout: 12000,
         proxyTimeout: 11000
       },
-      // 问答后台总时限30秒；代理多留传输余量，浏览器仍在35秒内结束等待。
-      '^/api/enterprises/[^/]+/knowledge-spaces/[^/]+/answers(?:/|$)': {
+      // 问答后台总时限：单空间30秒、跨空间60秒；代理多留传输余量。
+      '^/api/enterprises/[^/]+/(?:knowledge-spaces/[^/]+/)?answers(?:/|$)': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,
         xfwd: false,
-        timeout: 36000,
-        proxyTimeout: 34000
+        timeout: 75000,
+        proxyTimeout: 72000
       },
       '/api/enterprises': {
         target: 'http://127.0.0.1:8080',

@@ -3,7 +3,7 @@ import { pageView } from './knowledge.ts';
 import type { PageData } from './knowledge';
 
 export interface Department { id: string; name: string; status: number }
-export interface OrganizationMember { id: string; userId: string; username: string; departmentId: string | null;
+export interface OrganizationMember { id: string; userId: string; username: string; displayName: string; departmentId: string | null;
   role: string; status: number; accountStatus: number; permissionVersion: number }
 export interface Departments { enterprisePermissionVersion: number; page: PageData<Department> }
 const object = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -24,7 +24,9 @@ export function memberView(v: unknown): OrganizationMember {
   if (!object(v) || !positiveId(v.id) || !positiveId(v.userId) || typeof v.username !== 'string' || !v.username || v.username.length > 64
     || !(v.departmentId === null || positiveId(v.departmentId)) || !['ADMIN', 'EMPLOYEE'].includes(v.role as string)
     || ![0, 1, 2].includes(v.status as number) || ![0, 1].includes(v.accountStatus as number)) throw new EnterpriseError('成员数据没能正确读取，请稍后重试。');
-  return { id: v.id, userId: v.userId, username: v.username, departmentId: v.departmentId, role: v.role as string,
+  // displayName 为昵称优先的显示名；旧后端可能不带该字段，回退到账号名。
+  const displayName = typeof v.displayName === 'string' && v.displayName ? v.displayName : v.username;
+  return { id: v.id, userId: v.userId, username: v.username, displayName, departmentId: v.departmentId, role: v.role as string,
     status: v.status as number, accountStatus: v.accountStatus as number, permissionVersion: organizationVersion(v.permissionVersion) };
 }
 export function departmentsView(v: unknown): Departments {

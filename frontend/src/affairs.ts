@@ -87,7 +87,20 @@ const idOk = (value: unknown): boolean => ref(value) !== null;
 const optionalAmount = (value: unknown): string | null => (value === null ? null : amount(value));
 const text = (value: unknown, max: number): value is string =>
   typeof value === 'string' && !!value.trim() && value.length <= max;
-const milli = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0;
+/**
+ * 毫秒时间戳。包装类 Long 会被 Jackson 序列化成字符串（与金额同理），
+ * 这里同时接受数字与十进制字符串并统一成 number，避免单个字段形态不一致
+ * 让「批准/标记结算」这类操作明明成功却被解析层判失败。
+ */
+const ms = (value: unknown): number | null => {
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  }
+  return null;
+};
+const milli = (value: unknown): boolean => ms(value) !== null;
 const time = (value: unknown): value is string =>
   typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value);
 const uuid = (value: unknown): value is string =>
@@ -147,7 +160,7 @@ export function affairParticipant(value: unknown): AffairParticipant {
     || !(value.confirmedMs === null || milli(value.confirmedMs)) || !(value.note === null || text(value.note, 200)))
     return fail('参与确认');
   return { id: ref(value.id)!, memberId: ref(value.memberId)!, username: value.username, shareCents: amount(value.shareCents)!,
-    status: value.status as AffairParticipant['status'], confirmedMs: value.confirmedMs as number | null,
+    status: value.status as AffairParticipant['status'], confirmedMs: ms(value.confirmedMs),
     note: value.note as string | null };
 }
 
@@ -161,12 +174,14 @@ export function affairApplication(value: unknown): AffairApplication {
     || !idOk(value.applicantMemberId) || !idOk(value.payerMemberId)
     || !(value.payeeMemberId === null || idOk(value.payeeMemberId)) || !milli(value.createdMs)
     || !Array.isArray(value.participants) || value.participants.length > 20) return fail('补贴申请');
-  return { id: ref(value.id)!, ruleId: ref(value.ruleId)!, ruleVersion: Number(value.ruleVersion), ruleName: value.ruleName,
+  // id 是 UUID：校验用 uuid()，输出必须原样保留；ref() 只归一化纯数字编号，
+  // 传 UUID 会得到 null，导致下拉选项丢掉 value（表现为「会话和请求编号必须为UUID」）。
+  return { id: value.id as string, ruleId: ref(value.ruleId)!, ruleVersion: Number(value.ruleVersion), ruleName: value.ruleName,
     platform: value.platform, externalOrderNo: value.externalOrderNo as string | null, occurredAt: value.occurredAt,
     amountCents: amount(value.amountCents)!, status: value.status as AffairStatus, currentVersion: Number(value.currentVersion),
     quotaPeriod: value.quotaPeriod, reservedCents: amount(value.reservedCents)!, requiresManager: value.requiresManager,
     applicantMemberId: ref(value.applicantMemberId)!, payerMemberId: ref(value.payerMemberId)!,
-    payeeMemberId: ref(value.payeeMemberId)! as string | null, createdMs: value.createdMs,
+    payeeMemberId: ref(value.payeeMemberId)! as string | null, createdMs: ms(value.createdMs)!,
     participants: value.participants.map(affairParticipant) };
 }
 
@@ -174,9 +189,9 @@ export function affairSummary(value: unknown): AffairSummary {
   if (!object(value) || !uuid(value.id) || !text(value.ruleName, 128) || !text(value.platform, 32)
     || !time(value.occurredAt) || !money(value.amountCents) || !statuses.includes(value.status as AffairStatus)
     || !Number.isInteger(value.currentVersion) || !milli(value.createdMs)) return fail('我的申请');
-  return { id: ref(value.id)!, ruleName: value.ruleName, platform: value.platform, occurredAt: value.occurredAt,
+  return { id: value.id as string, ruleName: value.ruleName, platform: value.platform, occurredAt: value.occurredAt,
     amountCents: amount(value.amountCents)!, status: value.status as AffairStatus,
-    currentVersion: Number(value.currentVersion), createdMs: value.createdMs };
+    currentVersion: Number(value.currentVersion), createdMs: ms(value.createdMs)! };
 }
 
 export function affairPending(value: unknown): AffairPending {
@@ -185,7 +200,7 @@ export function affairPending(value: unknown): AffairPending {
     || !Number.isInteger(value.version) || !money(value.shareCents) || !milli(value.createdMs)) return fail('待确认');
   return { participantId: ref(value.participantId)!, applicationId: value.applicationId, ruleName: value.ruleName,
     platform: value.platform, occurredAt: value.occurredAt, amountCents: amount(value.amountCents)!,
-    version: Number(value.version), shareCents: amount(value.shareCents)!, createdMs: value.createdMs };
+    version: Number(value.version), shareCents: amount(value.shareCents)!, createdMs: ms(value.createdMs)! };
 }
 
 export function affairReceipt(value: unknown): AffairReceipt {
@@ -194,7 +209,7 @@ export function affairReceipt(value: unknown): AffairReceipt {
     || typeof value.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(value.sha256) || !milli(value.createdMs)
     || !idOk(value.uploadedBy) || !text(value.uploaderName, 128)) return fail('凭证');
   return { id: ref(value.id)!, originalName: value.originalName, contentType: value.contentType, byteSize: Number(value.byteSize),
-    sha256: value.sha256, createdMs: value.createdMs, uploadedBy: ref(value.uploadedBy)!, uploaderName: value.uploaderName };
+    sha256: value.sha256, createdMs: ms(value.createdMs)!, uploadedBy: ref(value.uploadedBy)!, uploaderName: value.uploaderName };
 }
 
 export function affairFinance(value: unknown): AffairFinanceApplication {
@@ -203,8 +218,9 @@ export function affairFinance(value: unknown): AffairFinanceApplication {
     || !milli(value.createdMs) || !(value.settlementId === null || idOk(value.settlementId))
     || !(value.settlementStatus === null || settlementStatuses.includes(String(value.settlementStatus))))
     return fail('财务清单');
-  return { id: ref(value.id)!, ruleName: value.ruleName, applicantName: value.applicantName, amountCents: amount(value.amountCents)!,
-    status: value.status as AffairStatus, occurredAt: value.occurredAt, createdMs: value.createdMs,
+  // id 是 UUID：同 affairApplication，不能用 ref() 归一化。
+  return { id: value.id as string, ruleName: value.ruleName, applicantName: value.applicantName, amountCents: amount(value.amountCents)!,
+    status: value.status as AffairStatus, occurredAt: value.occurredAt, createdMs: ms(value.createdMs)!,
     settlementId: value.settlementId as string | null, settlementStatus: value.settlementStatus as AffairFinanceApplication['settlementStatus'] };
 }
 
@@ -214,7 +230,7 @@ export function affairSettlement(value: unknown): AffairSettlement {
     || !settlementStatuses.includes(String(value.status)) || !milli(value.createdMs)) return fail('结算单');
   return { id: ref(value.id)!, applicationId: value.applicationId, ruleName: value.ruleName,
     applicantName: value.applicantName, amountCents: amount(value.amountCents)!, payeeName: value.payeeName,
-    status: value.status as AffairSettlement['status'], createdMs: value.createdMs };
+    status: value.status as AffairSettlement['status'], createdMs: ms(value.createdMs)! };
 }
 
 export function affairSettlementView(value: unknown): AffairSettlementView {
@@ -225,8 +241,8 @@ export function affairSettlementView(value: unknown): AffairSettlementView {
     || !(value.settledMs === null || milli(value.settledMs))) return fail('结算单');
   return { id: ref(value.id)!, applicationId: value.applicationId, ruleName: value.ruleName, amountCents: amount(value.amountCents)!,
     payeeMemberId: ref(value.payeeMemberId)!, payeeName: value.payeeName, status: value.status as AffairSettlementView['status'],
-    note: value.note as string | null, createdMs: value.createdMs, approvedMs: value.approvedMs as number | null,
-    settledMs: value.settledMs as number | null };
+    note: value.note as string | null, createdMs: ms(value.createdMs)!, approvedMs: ms(value.approvedMs),
+    settledMs: ms(value.settledMs) };
 }
 
 export function affairRefund(value: unknown): AffairRefund {

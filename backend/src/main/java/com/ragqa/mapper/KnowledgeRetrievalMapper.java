@@ -28,12 +28,15 @@ public interface KnowledgeRetrievalMapper {
             + "AND (v.valid_until_ms IS NULL OR v.valid_until_ms > #{now})";
 
     // LOCATE把%、_及引号视为普通内容，不使用LIKE通配符或${}拼接用户输入。
+    // 排序用词频而非布尔命中：标题命中再乘2。布尔计分会让"在负面语境里顺带提到关键词"的
+    // 文档（如报修指南里"不要提交密码"）与真正讲办理步骤的文档平分，再被chunkId平局规则挤掉真答案。
     @Select("<script>SELECT " + COLUMNS + " " + LIVE_SCOPE
             + " AND (<foreach collection='terms' item='term' separator=' OR '>"
             + "LOCATE(#{term},LOWER(c.content))>0</foreach>) ORDER BY ("
-            + "<foreach collection='terms' item='term' separator='+'>"
-            + "CASE WHEN LOCATE(#{term},LOWER(c.content))>0 THEN 1 ELSE 0 END</foreach>"
-            + ") DESC,c.id ASC LIMIT 24</script>")
+            + "<foreach collection='terms' item='term' separator=' + '>"
+            + "((CHAR_LENGTH(c.content) - CHAR_LENGTH(REPLACE(LOWER(c.content), #{term}, ''))) / CHAR_LENGTH(#{term}))"
+            + " + 2 * ((CHAR_LENGTH(LOWER(d.title)) - CHAR_LENGTH(REPLACE(LOWER(d.title), #{term}, ''))) / CHAR_LENGTH(#{term}))"
+            + "</foreach>) DESC,c.id ASC LIMIT 24</script>")
     @Options(timeout = 2, useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
     List<Evidence> search(@Param("scope") EnterpriseMemberContext scope, @Param("spaceId") long spaceId,
             @Param("now") long now, @Param("terms") List<String> terms);

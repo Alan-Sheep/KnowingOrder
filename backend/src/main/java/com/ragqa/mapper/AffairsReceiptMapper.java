@@ -39,11 +39,14 @@ public interface AffairsReceiptMapper {
         private long createdMs;
     }
 
+    /** 上传人展示中文姓名（昵称），昵称为空才回退登录账号。 */
+    String UPLOADER_NAME = "COALESCE(NULLIF(TRIM(u.nickname),''),u.username)";
+
     @Select("SELECT COUNT(*) FROM rag_affair_receipt WHERE enterprise_id=#{enterprise} AND application_id=#{application}")
     long count(@Param("enterprise") long enterprise, @Param("application") String application);
 
     @Select("SELECT r.id,r.original_name AS originalName,r.content_type AS contentType,r.byte_size AS byteSize,"
-            + "r.sha256,r.created_ms AS createdMs,r.uploaded_by AS uploadedBy,u.username AS uploaderName "
+            + "r.sha256,r.created_ms AS createdMs,r.uploaded_by AS uploadedBy," + UPLOADER_NAME + " AS uploaderName "
             + "FROM rag_affair_receipt r "
             + "JOIN sys_enterprise_member m ON m.id=r.uploaded_by AND m.enterprise_id=#{enterprise} "
             + "JOIN sys_user u ON u.id=m.user_id "
@@ -60,7 +63,7 @@ public interface AffairsReceiptMapper {
             @Param("id") long id);
 
     @Select("SELECT r.id,r.original_name AS originalName,r.content_type AS contentType,r.byte_size AS byteSize,"
-            + "r.sha256,r.created_ms AS createdMs,r.uploaded_by AS uploadedBy,u.username AS uploaderName "
+            + "r.sha256,r.created_ms AS createdMs,r.uploaded_by AS uploadedBy," + UPLOADER_NAME + " AS uploaderName "
             + "FROM rag_affair_receipt r "
             + "JOIN sys_enterprise_member m ON m.id=r.uploaded_by AND m.enterprise_id=#{enterprise} "
             + "JOIN sys_user u ON u.id=m.user_id "

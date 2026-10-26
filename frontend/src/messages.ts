@@ -1,8 +1,16 @@
 import type { Language } from './preferences';
+import { enterpriseMessages } from './messages-enterprise';
+import type { MessageRow } from './messages-enterprise';
+import { messagesOrg } from './messages-org';
+import { messagesWorkspace } from './messages-workspace';
+import { messagesSpace } from './messages-space';
+import { messagesAnswer } from './messages-answer';
+import { messagesAffairs } from './messages-affairs';
+import { messagesDocs } from './messages-docs';
 
 /** 静态界面词典；用户原文、资料与模型回答不自动翻译，避免改写证据。 */
 const languages: Language[] = ['en', 'fr', 'ja', 'de', 'es'];
-const messages: Record<string, readonly [string, string, string, string, string]> = {
+const baseMessages: Record<string, MessageRow> = {
   '让知识，成为答案': ['Knowledge into answers', 'Du savoir aux réponses', '知識を答えに', 'Wissen wird Antwort', 'Del conocimiento a la respuesta'],
   '知识，让答案更进一步': ['Better answers through knowledge', 'Le savoir enrichit les réponses', '知識で回答をより確かに', 'Bessere Antworten durch Wissen', 'Mejores respuestas con conocimiento'],
   '联网找依据，让信息有出处。': ['Find evidence and check its source.', 'Trouvez des preuves et leurs sources.', '根拠を探し、出典を確認。', 'Belege finden und Quellen prüfen.', 'Encuentra pruebas y verifica su origen.'],
@@ -79,8 +87,20 @@ const messages: Record<string, readonly [string, string, string, string, string]
   '本地工作空间': ['Local workspace', 'Espace local', 'ローカルワークスペース', 'Lokaler Arbeitsbereich', 'Espacio local'],
   '当前页面 · 刷新后清空': ['This page · cleared on reload', 'Cette page · effacée au rechargement', 'このページのみ・再読込で消去', 'Diese Seite · Neuladen löscht Inhalte', 'Esta página · se borra al recargar'],
   '工作空间': ['Workspace', 'Espace de travail', 'ワークスペース', 'Arbeitsbereich', 'Espacio de trabajo'],
-  '本地开发': ['Local development', 'Développement local', 'ローカル開発', 'Lokale Entwicklung', 'Desarrollo local'],
+  '服务在线': ['Service online', 'Service en ligne', 'サービス稼働中', 'Dienst online', 'Servicio en línea'],
   '网络离线': ['Offline', 'Hors ligne', 'オフライン', 'Offline', 'Sin conexión'],
+  '工作台': ['Workbench', 'Espace de travail', 'ワークベンチ', 'Arbeitsbereich', 'Espacio de trabajo'],
+  '企业问答': ['Enterprise Q&A', 'Questions d’entreprise', '社内Q&A', 'Unternehmens-Q&A', 'Preguntas de empresa'],
+  '知识空间': ['Knowledge spaces', 'Espaces de connaissance', 'ナレッジスペース', 'Wissensräume', 'Espacios de conocimiento'],
+  '员工事务': ['Employee affairs', 'Affaires RH', '従業員手続き', 'Mitarbeiteraufgaben', 'Trámites del empleado'],
+  '联网问答体验': ['Web search preview', 'Aperçu recherche web', 'ウェブ検索体験', 'Websuche-Vorschau', 'Vista previa de búsqueda'],
+  '企业知识问答': ['Enterprise knowledge Q&A', 'Q&R sur les connaissances', '社内知識Q&A', 'Unternehmenswissen-Q&A', 'Preguntas sobre conocimiento'],
+  '需登录': ['Sign-in required', 'Connexion requise', 'ログインが必要', 'Anmeldung erforderlich', 'Requiere inicio de sesión'],
+  '前往企业问答': ['Go to enterprise Q&A', 'Aller aux questions d’entreprise', '社内Q&Aへ', 'Zu Unternehmens-Q&A', 'Ir a preguntas de empresa'],
+  '打开公开搜索引擎': ['Open a public search engine', 'Ouvrir un moteur de recherche public', '公開検索エンジンを開く', 'Öffentliche Suchmaschine öffnen', 'Abrir un buscador público'],
+  '公开联网问答体验未开启': ['Public web Q&A preview is off', 'L’aperçu web public est désactivé', '公開ウェブ問答は無効です', 'Öffentliche Websuche ist aus', 'La vista web pública está desactivada'],
+  '需要查企业内部资料，请使用「企业问答」——回答带引用、带版本、带权限校验。': ['For internal company material, use Enterprise Q&A — answers carry citations, versions and permission checks.', 'Pour les documents internes, utilisez les questions d’entreprise : réponses sourcées, versionnées et soumises aux droits d’accès.', '社内資料は「社内Q&A」をご利用ください。回答には出典・版・権限確認が付きます。', 'Für interne Unterlagen bitte Unternehmens-Q&A nutzen – Antworten mit Quellen, Versionen und Rechteprüfung.', 'Para material interno, usa Preguntas de empresa: respuestas con citas, versión y control de permisos.'],
+  '这个入口会调用外部联网搜索与外部模型，属于开发期验证功能。当前部署没有开放它，是为了避免一个无需登录的公开接口被滥用、消耗外部额度。': ['This entry calls an external search engine and an external model; it is a development-time feature. It stays off in this deployment so an unauthenticated public endpoint cannot be abused or burn external quota.', 'Cette entrée appelle un moteur de recherche et un modèle externes ; c’est une fonction de développement. Elle reste désactivée dans ce déploiement afin qu’une API publique non authentifiée ne soit ni exploitée ni consommatrice de quota externe.', 'この入口は外部検索エンジンと外部モデルを呼び出す開発段階の機能です。この配備では無効にしています。認証不要の公開APIが悪用され、外部の利用枠を消費するのを避けるためです。', 'Dieser Einstieg ruft eine externe Suchmaschine und ein externes Modell auf; es ist eine Entwicklungsfunktion. In dieser Bereitstellung bleibt er deaktiviert, damit eine öffentliche Schnittstelle ohne Anmeldung nicht missbraucht wird oder externes Kontingent verbraucht.', 'Esta entrada llama a un buscador y a un modelo externos; es una función de desarrollo. Permanece desactivada en este despliegue para que una API pública sin autenticación no se abuse ni consuma cuota externa.'],
   '参考资料': ['Sources', 'Sources', '参考資料', 'Quellen', 'Fuentes'],
   '导出当前对话': ['Export conversation', 'Exporter la conversation', '会話をエクスポート', 'Gespräch exportieren', 'Exportar conversación'],
   '工作空间设置': ['Workspace settings', 'Paramètres', 'ワークスペース設定', 'Einstellungen', 'Configuración'],
@@ -145,6 +165,10 @@ const messages: Record<string, readonly [string, string, string, string, string]
   '洛杉矶': ['Los Angeles', 'Los Angeles', 'ロサンゼルス', 'Los Angeles', 'Los Ángeles'],
   '检索资料不一定适用于本题，引用事实已另行校验。': ['Retrieved pages may not apply to this question; cited facts are checked separately.', 'Les pages trouvées ne sont pas toutes applicables ; les faits cités sont vérifiés séparément.', '検索資料すべてが本問に適用されるとは限りません。引用事実は別途確認しています。', 'Gefundene Seiten passen nicht immer zur Frage. Zitierte Fakten werden gesondert geprüft.', 'No todas las páginas se aplican a la pregunta; los hechos citados se comprueban por separado.']
 };
+
+/** 公开侧与企业管理侧合并成一张表；键是中文原文，同键以后者为准。 */
+const messages: Record<string, MessageRow> = { ...baseMessages, ...enterpriseMessages,
+  ...messagesOrg, ...messagesWorkspace, ...messagesSpace, ...messagesAnswer, ...messagesAffairs, ...messagesDocs, };
 
 export function translate(language: Language, text: string, values: Record<string, string | number> = {}): string {
   const index = languages.indexOf(language);

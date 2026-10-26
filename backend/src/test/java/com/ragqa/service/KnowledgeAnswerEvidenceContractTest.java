@@ -2,9 +2,14 @@ package com.ragqa.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ragqa.common.PageResult;
 import com.ragqa.common.ResultCode;
+import com.ragqa.config.JacksonConfig;
+import com.ragqa.controller.EnterpriseAnswerController;
 import com.ragqa.domain.dto.AuthenticatedUserPrincipal;
 import com.ragqa.domain.dto.EnterpriseMemberContext;
+import com.ragqa.domain.dto.EnterpriseResources;
 import com.ragqa.domain.dto.KnowledgeAnswers.*;
 import com.ragqa.exception.BusinessException;
 import com.ragqa.rag.chat.ChatModel;
@@ -17,6 +22,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.core.MethodParameter;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.support.WebDataBinderFactory;
+import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.method.support.ModelAndViewContainer;
 
 import java.util.List;
 import java.util.Map;
@@ -24,6 +38,8 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /** 真实模板、JSON校验、引用解析及服务编排；仅底层模型、身份和检索使用替身，不证明模型语义能力。 */
 class KnowledgeAnswerEvidenceContractTest {
@@ -192,6 +208,52 @@ class KnowledgeAnswerEvidenceContractTest {
         assertThat(answer.parts().get(0).paragraphs()).isEmpty();
         assertThat(meal.content()).doesNotContain("宠物保险");
         verifyOnce();
+    }
+
+    @Test
+    void crossSpaceHttpRouteReturnsNineSourcesAndRealTemplateCompositionWithReviewedCitation() throws Exception {
+        String question = "校园网密码忘了怎么重置？";
+        String content = "忘记密码时通过官方入口核验预留联系方式后重置。";
+        var spaces = new java.util.ArrayList<EnterpriseResources.KnowledgeSpace>();
+        for (int index = 0; index < 5; index++) {
+            long space = 401L + index;
+            spaces.add(new EnterpriseResources.KnowledgeSpace(space, "校园服务" + index, 1));
+            var sources = new java.util.ArrayList<Evidence>();
+            for (int rank = 0; rank < 2; rank++) {
+                Evidence source = evidence(100L + index * 2 + rank, "校园网密码重置指南", content);
+                sources.add(source);
+                when(retriever.requireEvidence(member, space, source.chunkId())).thenReturn(source);
+            }
+            when(retriever.retrieve(eq(member), eq(space), anyString(), any())).thenReturn(List.copyOf(sources));
+        }
+        var page = new Page<EnterpriseResources.KnowledgeSpace>(1, 500, spaces.size());
+        page.setRecords(spaces);
+        when(resources.listSpaces(member, 1L, 500L)).thenReturn(PageResult.of(page));
+        service.close(); service = create("1:401,1:402,1:403,1:404,1:405");
+        response(part(question, "ANSWERED", List.of(paragraph("通过官方入口核验预留联系方式后重置密码。", 9, content)), List.of()));
+        var builder = new Jackson2ObjectMapperBuilder();
+        new JacksonConfig().jacksonCustomizer().customize(builder);
+        // 这里只替代身份参数，HTTP路由、真实模板、引文校验、复核和序列化均使用生产代码；安全链另由原测试验证。
+        var mvc = MockMvcBuilders.standaloneSetup(new EnterpriseAnswerController(service))
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(builder.build()))
+                .setCustomArgumentResolvers(new HandlerMethodArgumentResolver() {
+                    @Override public boolean supportsParameter(MethodParameter parameter) {
+                        return parameter.getParameterType().equals(AuthenticatedUserPrincipal.class);
+                    }
+                    @Override public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer container,
+                            NativeWebRequest request, WebDataBinderFactory binder) { return user; }
+                }).build();
+        mvc.perform(post("/api/enterprises/1/answers").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("question", question))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.mode").value("SYNTHETIC_MODEL"))
+                .andExpect(jsonPath("$.data.status").value("ANSWERED"))
+                .andExpect(jsonPath("$.data.evidence.length()").value(9))
+                .andExpect(jsonPath("$.data.evidence[8].spaceId").isString())
+                .andExpect(jsonPath("$.data.evidence[8].evidence.chunkId").isString())
+                .andExpect(jsonPath("$.data.parts[0].paragraphs[0].citations[0].sourceId").value(9));
+        verify(client, times(1)).generate(anyString(), contains(question), eq(3000), any());
+        verify(client, times(1)).generate(anyString(), anyString(), eq(1200), any());
     }
 
     private KnowledgeAnswerService create(String spaces) {

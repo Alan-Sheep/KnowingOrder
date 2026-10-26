@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { createEnterpriseClient } from '../enterprise';
 import type { AffairSummary } from '../affairs';
 import { useSession } from '../session';
+import { t } from '../i18n';
 import AppIcon from './AppIcon.vue';
 
 // 工作台概览：登录后最想知道的三件事——有几个空间、有没有要我确认的、我的申请到哪一步。
@@ -77,12 +78,12 @@ async function load() {
 }
 
 const cards = computed(() => [
-  { key: 'spaces', icon: 'book', label: '可访问知识空间', value: spaceTotal.value, unit: '个',
-    hint: '已按你的授权范围筛选', page: 'knowledge' as const },
-  { key: 'pending', icon: 'check', label: '待我确认', value: pendingTotal.value, unit: '条',
-    hint: pendingTotal.value ? '确认或拒绝后，整单才会继续' : '暂时没有要你确认的', page: 'affairs' as const },
-  { key: 'mine', icon: 'briefcase', label: '我的申请', value: mineTotal.value, unit: '条',
-    hint: latest.value ? `最近一笔：${statusText[latest.value.status] ?? latest.value.status}` : '还没有提交过补贴申请', page: 'affairs' as const }
+  { key: 'spaces', icon: 'book', label: t('可访问知识空间'), value: spaceTotal.value, unit: t('个'),
+    hint: t('已按你的授权范围筛选'), page: 'knowledge' as const },
+  { key: 'pending', icon: 'check', label: t('待我确认'), value: pendingTotal.value, unit: t('条'),
+    hint: pendingTotal.value ? t('确认或拒绝后，整单才会继续') : t('暂时没有要你确认的'), page: 'affairs' as const },
+  { key: 'mine', icon: 'briefcase', label: t('我的申请'), value: mineTotal.value, unit: t('条'),
+    hint: latest.value ? t('最近一笔：{status}', { status: t(statusText[latest.value.status] ?? latest.value.status) }) : t('还没有提交过补贴申请'), page: 'affairs' as const }
 ]);
 
 onMounted(() => { void load(); });
@@ -90,29 +91,29 @@ onUnmounted(() => { mounted = false; api.dispose(); });
 </script>
 
 <template>
-  <section class="work-overview" aria-label="我的工作概览">
+  <section class="work-overview" :aria-label="t('我的工作概览')">
     <header class="overview-head">
       <div>
         <span class="overview-kicker">AT A GLANCE</span>
-        <h2>今天要处理的事</h2>
+        <h2>{{ t('今天要处理的事') }}</h2>
       </div>
-      <span v-if="state === 'ready'" class="overview-scope"><AppIcon name="shield" :size="13" />{{ enterpriseName }} · 按你的权限统计</span>
-      <button v-else-if="state === 'error'" type="button" class="overview-text-button" @click="load">重新读取</button>
+      <span v-if="state === 'ready'" class="overview-scope"><AppIcon name="shield" :size="13" />{{ enterpriseName }} · {{ t('按你的权限统计') }}</span>
+      <button v-else-if="state === 'error'" type="button" class="overview-text-button" @click="load">{{ t('重新读取') }}</button>
     </header>
 
     <p v-if="state === 'checking'" class="overview-loading" role="status">
-      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>正在读取你的空间与待办…
+      <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>{{ t('正在读取你的空间与待办…') }}
     </p>
 
     <div v-else-if="state === 'anonymous'" class="overview-empty">
       <AppIcon name="shield" :size="17" />
-      <p>{{ message }}</p>
-      <button type="button" @click="emit('login')">用企业账号登录</button>
+      <p>{{ t(message) }}</p>
+      <button type="button" @click="emit('login')">{{ t('用企业账号登录') }}</button>
     </div>
 
     <p v-else-if="state === 'error'" class="overview-error" role="alert">
       <AppIcon name="info" :size="15" /><span>{{ message }}</span>
-      <button type="button" @click="load">重试</button>
+      <button type="button" @click="load">{{ t('重试') }}</button>
     </p>
 
     <div v-else class="overview-grid">
@@ -122,7 +123,7 @@ onUnmounted(() => { mounted = false; api.dispose(); });
           <small>{{ card.label }}</small>
           <strong v-if="card.value !== null">{{ card.value }}<em>{{ card.unit }}</em></strong>
           <strong v-else class="unavailable">—</strong>
-          <span>{{ card.value === null ? '这一项没读出来，可稍后刷新' : card.hint }}</span>
+          <span>{{ card.value === null ? t('这一项没读出来，可稍后刷新') : card.hint }}</span>
         </span>
         <AppIcon class="overview-arrow" name="chevron" :size="14" />
       </button>

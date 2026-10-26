@@ -1,6 +1,6 @@
 /** 企业私有接口：Session仅由浏览器管理，CSRF仅在本次操作内存中使用。 */
 import { chunkView, documentView, grantsView, pageView, versionView } from './knowledge.ts';
-import { answerView, evidenceView } from './knowledge-answer.ts';
+import { answerView, crossAnswerView, evidenceView } from './knowledge-answer.ts';
 import { workspaceChats, workspaceHistory, workspaceJob, workspaceUuid, feedbackList } from './knowledge-workspace.ts';
 import type { UploadMetadata } from './knowledge';
 import { ingestJob, ingestJobs } from './knowledge-ingest.ts';
@@ -12,7 +12,7 @@ import { affairApplication as applicationView, affairEligibility as eligibilityV
 export interface EnterpriseWorkspace { enterpriseId: string; enterpriseName: string; role: 'EMPLOYEE' | 'ADMIN' | 'FINANCE' }
 /** 分摊输入：成员编号与分摊金额均以字符串承接，避免Long精度问题。 */
 export interface AffairShareInput { memberId: string; shareCents: string }
-export interface Account { userId: string; enterprises?: EnterpriseWorkspace[] }
+export interface Account { userId: string; username?: string; displayName?: string; enterprises?: EnterpriseWorkspace[] }
 export interface KnowledgeSpace { id: string; name: string; permissionVersion: number }
 export interface SpacePage { records: KnowledgeSpace[]; total: number; pageNum: number; pageSize: number; pages: number }
 
@@ -100,6 +100,8 @@ function account(value: unknown): Account {
   if (value.enterprises === undefined) return { userId: value.userId };
   if (!Array.isArray(value.enterprises) || value.enterprises.length > 100)
     throw new EnterpriseError('企业归属数据没能正确读取，请联系管理员。');
+  const username = typeof value.username === 'string' && value.username.trim() ? value.username.trim() : undefined;
+  const displayName = typeof value.displayName === 'string' && value.displayName.trim() ? value.displayName.trim() : username;
   const seen = new Set<string>();
   const enterprises = value.enterprises.map(item => {
     if (!object(item) || !positiveId(item.enterpriseId) || seen.has(item.enterpriseId)
@@ -109,7 +111,7 @@ function account(value: unknown): Account {
     seen.add(item.enterpriseId);
     return { enterpriseId: item.enterpriseId, enterpriseName: item.enterpriseName, role: item.role } as EnterpriseWorkspace;
   });
-  return { userId: value.userId, enterprises };
+  return { userId: value.userId, username, displayName, enterprises };
 }
 
 function space(value: unknown): KnowledgeSpace {
@@ -310,10 +312,12 @@ export function createEnterpriseClient(fetcher: typeof fetch = globalThis.fetch,
       return checkedWrite(() => jsonWrite(request, `/api/enterprises/${id(enterprise)}/organization/members/${id(member)}`,
         { expectedVersion: organizationVersion(expected), departmentId: departmentId === null ? null : id(departmentId), status }), memberView);
     }, true),
-    createEmployee: (enterprise: string, username: string, password: string) => operation(request => {
+    createEmployee: (enterprise: string, username: string, password: string, displayName = '') => operation(request => {
       if (!/^[A-Za-z0-9_.@-]{3,64}$/.test(username) || password.trim().length === 0 || password.length < 12 || new TextEncoder().encode(password).length > 72)
         throw new EnterpriseError('账号须为3至64位字母数字或_.@-；口令至少12字符且不超过72字节。');
-      return checkedWrite(() => jsonWrite(request, `/api/enterprises/${id(enterprise)}/employees`, { username, password }), employeeResult);
+      const name = displayName.trim();
+      if (name.length > 64) throw new EnterpriseError('姓名去除首尾空白后须不超过64个字符。');
+      return checkedWrite(() => jsonWrite(request, `/api/enterprises/${id(enterprise)}/employees`, { username, password, displayName: name }), employeeResult);
     }, true),
     createSpace: (enterpriseId: string, name: string) => operation(async request => {
       const normalized = name.trim();
@@ -410,6 +414,19 @@ export function createEnterpriseClient(fetcher: typeof fetch = globalThis.fetch,
     }, false, Math.max(timeoutMs, 35000)),
     evidence: (enterpriseId: string, spaceId: string, chunkId: string) => operation(async request => {
       const data = await request(`${base(enterpriseId, spaceId)}/answers/evidence/${id(chunkId)}`);
+      try { return evidenceView(data); }
+      catch { throw new EnterpriseError('引用数据格式不正确，请联系知识负责人。'); }
+    }),
+    /** 跨空间回答：不选空间，一次提问覆盖全部授权空间；证据自带来源空间编号。后台预算60秒。 */
+    crossAnswer: (enterpriseId: string, question: string) => operation(async request => {
+      if (!question.trim() || question.length > 1200) throw new EnterpriseError('问题须为1至1200个字符。');
+      const data = await jsonWrite(request, `/api/enterprises/${id(enterpriseId)}/answers`, { question });
+      try { return crossAnswerView(data); }
+      catch { throw new EnterpriseError('回答数据格式不正确，本次不会自动重新调用模型。'); }
+    }, false, Math.max(timeoutMs, 70000)),
+    /** 跨空间证据详情：按证据自带的来源空间取回原文。 */
+    crossEvidence: (enterpriseId: string, spaceId: string, chunkId: string) => operation(async request => {
+      const data = await request(`/api/enterprises/${id(enterpriseId)}/answers/evidence/${id(spaceId)}/${id(chunkId)}`);
       try { return evidenceView(data); }
       catch { throw new EnterpriseError('引用数据格式不正确，请联系知识负责人。'); }
     }),

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { createEnterpriseClient, EnterpriseError, positiveId } from '../enterprise';
-import type { Account, KnowledgeSpace } from '../enterprise';
-import type { Evidence, KnowledgeAnswer } from '../knowledge-answer';
-import type { WorkspaceChat, WorkspaceJob } from '../knowledge-workspace';
+import type { Account } from '../enterprise';
+import type { CrossAnswer, Evidence, SpaceEvidence } from '../knowledge-answer';
 import { useSession } from '../session';
+import { t } from '../i18n';
 import { publicChatEnabled } from '../public-chat';
-import KnowledgeFeedbackPanel from './KnowledgeFeedbackPanel.vue';
+import { uuid } from '../uuid';
 import AppIcon from './AppIcon.vue';
 
 const emit = defineEmits<{ manage: []; general: []; login: [] }>();
@@ -15,114 +15,44 @@ const api = createEnterpriseClient();
 const { user, ensure, markAnonymous } = useSession();
 const checking = ref(true);
 const enterpriseId = ref('');
-const spaceId = ref('');
-const currentMode = ref('');
-const retrievalMode = ref('');
-const retrievalLabels: Record<string, string> = { KEYWORD: '关键词检索', HYBRID: '关键词与向量混合检索' };
-const spaces = ref<KnowledgeSpace[]>([]);
 const question = ref('');
-const notice = ref('正在核对登录状态…');
-const listing = ref(false);
+const notice = ref(t('正在核对登录状态…'));
 const now = ref(Date.now());
-type Card = { id: string; question: string; started: number; pending: boolean; answer?: KnowledgeAnswer; error?: string;
-  jobId?: string; requestChatId?: string; retryable?: boolean; status?: string; message?: string;
-  feedback?: string; feedbackId?: string; feedbackSnapshot?: string; feedbackSaved?: boolean };
+type Card = { id: string; question: string; started: number; pending: boolean; answer?: CrossAnswer; error?: string };
 const cards = ref<Card[]>([]);
-const persistent = ref(false);
-const chats = ref<WorkspaceChat[]>([]);
-const chatId = ref<string>(crypto.randomUUID());
-const loadingHistory = ref(false);
-const checkingWorkspace = ref(false);
-let workspaceGeneration = 0;
 const source = ref<Evidence>();
 const sourceNotice = ref('');
 /** 当前展开核对的片段；空串表示全部收起。同一条再点一次即收起。 */
 const openChunkId = ref('');
 let mounted = true;
 let sourceGeneration = 0;
-let scopeGeneration = 0;
 const active = computed(() => cards.value.filter(card => card.pending).length);
 const currentEnterprise = computed(() => user.value?.enterprises?.find(item => item.enterpriseId === enterpriseId.value));
-const currentSpace = computed(() => spaces.value.find(item => item.id === spaceId.value));
-const prompts = [
-  { icon: 'book', title: '读懂一项制度', text: '请根据资料，梳理这项制度的适用范围和注意事项。', hint: '适用范围 · 关键条件' },
-  { icon: 'layers', title: '理清办理流程', text: '请说明资料中有哪些办理步骤，需要准备什么材料？', hint: '办理步骤 · 所需材料' },
-  { icon: 'search', title: '找到原文依据', text: '请帮我找到与当前问题相关的原文，并注明出处。', hint: '原文片段 · 版本出处' }
-];
-const ready = computed(() => user.value && positiveId(enterpriseId.value) && positiveId(spaceId.value) && !!currentMode.value && !checkingWorkspace.value);
-const labels: Record<string, string> = { ANSWERED: '已有依据的回答', PARTIAL: '部分可回答', NO_EVIDENCE: '资料不足',
-  CONFLICT: '资料有冲突', EVIDENCE_ONLY: '仅原文摘录', MODEL_UNAVAILABLE: '模型未完成',
-  OUT_OF_SCOPE: '超出学校业务范围', SCOPE_UNKNOWN: '业务范围待确认', SCOPE_UNAVAILABLE: '范围识别不可用' };
+const prompts = computed(() => [
+  { icon: 'book', title: t('读懂一项制度'), text: t('请根据资料，梳理这项制度的适用范围和注意事项。'), hint: t('适用范围 · 关键条件') },
+  { icon: 'layers', title: t('理清办理流程'), text: t('请说明资料中有哪些办理步骤，需要准备什么材料？'), hint: t('办理步骤 · 所需材料') },
+  { icon: 'search', title: t('找到原文依据'), text: t('请帮我找到与当前问题相关的原文，并注明出处。'), hint: t('原文片段 · 版本出处') }
+]);
+const ready = computed(() => !!user.value && positiveId(enterpriseId.value));
+const labels = computed<Record<string, string>>(() => ({ ANSWERED: t('已有依据的回答'), PARTIAL: t('部分可回答'), NO_EVIDENCE: t('资料不足'),
+  CONFLICT: t('资料有冲突'), EVIDENCE_ONLY: t('仅原文摘录'), MODEL_UNAVAILABLE: t('模型未完成'),
+  OUT_OF_SCOPE: t('超出学校业务范围'), SCOPE_UNKNOWN: t('业务范围待确认'), SCOPE_UNAVAILABLE: t('范围识别不可用') }));
 const timer = setInterval(() => { now.value = Date.now(); }, 1000);
-watch([enterpriseId, spaceId], async () => {
-  const workspace = ++workspaceGeneration;
-  persistent.value = false; chats.value = []; chatId.value = crypto.randomUUID(); checkingWorkspace.value = false;
-  loadingHistory.value = false;
-  const generation = ++scopeGeneration;
-  sourceGeneration++;
+watch(enterpriseId, () => {
   cards.value = []; source.value = undefined; sourceNotice.value = ''; openChunkId.value = '';
-  currentMode.value = ''; retrievalMode.value = '';
-  if (!user.value || !positiveId(enterpriseId.value) || !positiveId(spaceId.value)) return;
-  checkingWorkspace.value = true;
-  notice.value = '正在核验空间的数据外发边界…';
-  try {
-    const mode = await api.answerMode(enterpriseId.value, spaceId.value);
-    if (mounted && generation === scopeGeneration) {
-      currentMode.value = mode;
-      notice.value = mode === 'SYNTHETIC_MODEL' ? '此空间已获准使用外部模型，仅允许虚构测试资料和合成问题，请勿输入真实企业信息。'
-        : '此空间只做本地检索，不向模型发送问题或原文。';
-      try {
-        const strategy = await api.retrievalMode(enterpriseId.value, spaceId.value);
-        if (mounted && generation === scopeGeneration) retrievalMode.value = strategy;
-      } catch (error) {
-        if (mounted && generation === scopeGeneration) {
-          notice.value += ' 当前检索策略无法确认，不代表索引已就绪。';
-          if (error instanceof EnterpriseError && error.code === 401) { failure(error); return; }
-        }
-      }
-      try {
-        const history = await api.chats(enterpriseId.value, spaceId.value);
-        if (mounted && workspace === workspaceGeneration) {
-          chats.value = history; persistent.value = true;
-          if (history[0]) { chatId.value = history[0].id; await loadHistory(); }
-        }
-      } catch (error) {
-        if (mounted && workspace === workspaceGeneration) {
-          if (error instanceof EnterpriseError && error.code === 401) failure(error);
-          else notice.value += ' 会话历史暂不可用；当前仍可单次提问，刷新前请保存结果。';
-        }
-      }
-    }
-  } catch (error) { if (mounted && generation === scopeGeneration) notice.value = failure(error); }
-  finally { if (mounted && generation === scopeGeneration) checkingWorkspace.value = false; }
+  notice.value = '';
 });
-watch(enterpriseId, () => { spaces.value = []; spaceId.value = ''; });
 
 function failure(error: unknown): string {
   if (error instanceof EnterpriseError && error.code === 401) { markAnonymous(); cards.value = []; source.value = undefined; }
-  return error instanceof EnterpriseError ? error.message : '请求未完成，请检查服务后手动重试。';
-}
-async function list() {
-  if (!positiveId(enterpriseId.value) || listing.value || active.value) return;
-  listing.value = true;
-  notice.value = '正在读取已授权的知识空间…';
-  source.value = undefined;
-  try {
-    const result = await api.listSpaces(enterpriseId.value, 1, 500);
-    if (mounted) {
-      spaces.value = result.records;
-      notice.value = result.records.length ? '已连接团队知识，仅使用获授权的有效资料。' : '没有已授权空间，请联系知识负责人。';
-      spaceId.value = result.records[0]?.id ?? '';
-    }
-  } catch (error) { if (mounted) { spaces.value = []; spaceId.value = ''; notice.value = failure(error); } }
-  finally { if (mounted) listing.value = false; }
+  return error instanceof EnterpriseError ? error.message : t('请求未完成，请检查服务后手动重试。');
 }
 async function connect(current: Account) {
   enterpriseId.value = current.enterprises?.length === 1 ? current.enterprises[0]!.enterpriseId : '';
-  if (!current.enterprises) { notice.value = '登录信息尚不包含所属企业，请重启最新版后端后刷新。'; return; }
-  if (!current.enterprises.length) { notice.value = '账号尚未分配企业，请联系管理员。'; return; }
-  if (!enterpriseId.value) { notice.value = '请选择要进入的企业工作区。'; return; }
-  await list();
+  if (!current.enterprises) { notice.value = t('登录信息尚不包含所属企业，请重启最新版后端后刷新。'); return; }
+  if (!current.enterprises.length) { notice.value = t('账号尚未分配企业，请联系管理员。'); return; }
+  if (!enterpriseId.value) { notice.value = t('请选择要进入的企业工作区。'); return; }
+  notice.value = '';
 }
 function questionKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
@@ -130,82 +60,21 @@ function questionKeydown(event: KeyboardEvent) {
   void ask();
 }
 async function ask() {
-  if (!ready.value || active.value >= 2 || !question.value.trim() || question.value.length > 1200 || listing.value) return;
-  const enterprise = enterpriseId.value;
-  const space = spaceId.value;
-  const card = ref<Card>({ id: crypto.randomUUID(), question: question.value, started: Date.now(), pending: true });
-  cards.value.push(card.value);
-  const limit = persistent.value ? 50 : 10;
-  if (cards.value.length > limit) cards.value.splice(cards.value.findIndex(item => !item.pending), 1);
+  if (!ready.value || active.value >= 2 || !question.value.trim() || question.value.length > 1200) return;
+  cards.value.push({ id: uuid(), question: question.value, started: Date.now(), pending: true });
+  // 异步返回必须更新数组里的响应式对象，让回答、引用及并发计数同时刷新。
+  const card = cards.value.at(-1)!;
+  if (cards.value.length > 10) cards.value.splice(cards.value.findIndex(item => !item.pending), 1);
   question.value = '';
   source.value = undefined;
-  const generation = workspaceGeneration;
-  if (persistent.value) {
-    card.value.jobId = card.value.id;
-    card.value.requestChatId = chatId.value;
-    try {
-      const job = await api.submitJob(enterprise, space, card.value.requestChatId, card.value.id, card.value.question);
-      if (mounted && generation === workspaceGeneration) {
-        if (!chats.value.some(chat => chat.id === chatId.value)) chats.value.unshift({ id: chatId.value, title: card.value.question.slice(0, 80), createdMs: job.createdMs });
-        applyJob(card.value, job); void poll(card.value, enterprise, space, generation);
-      }
-    } catch (error) {
-      if (mounted && generation === workspaceGeneration) {
-        card.value.error = failure(error); card.value.pending = false;
-        card.value.retryable = error instanceof EnterpriseError && error.uncertain;
-      }
-    }
-    return;
-  }
-  try { const answer = await api.answer(enterprise, space, card.value.question); if (mounted && generation === workspaceGeneration) card.value.answer = answer; }
-  catch (error) { if (mounted) card.value.error = failure(error); }
-  finally { if (mounted) card.value.pending = false; }
-}
-function applyJob(card: Card, job: WorkspaceJob) {
-  card.retryable = false;
-  card.jobId = job.id; card.status = job.status; card.message = job.message;
-  card.pending = ['PENDING', 'RUNNING'].includes(job.status); card.answer = job.answer ?? undefined;
-  card.started = job.createdMs; card.error = undefined;
-}
-async function poll(card: Card, enterprise: string, space: string, generation: number) {
-  const stopAt = Date.now() + 35000;
-  while (mounted && generation === workspaceGeneration && card.pending && Date.now() < stopAt) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    if (!mounted || generation !== workspaceGeneration || !card.pending) return;
-    try {
-      const job = await api.readJob(enterprise, space, card.jobId!);
-      if (!mounted || generation !== workspaceGeneration) return;
-      applyJob(card, job);
-    } catch (error) {
-      if (mounted && generation === workspaceGeneration) { card.pending = false; card.error = failure(error) + ' 请查询原任务，不要新建重复请求。'; }
-      return;
-    }
-  }
-  if (mounted && generation === workspaceGeneration && card.pending) {
-    card.pending = false; card.error = '进度连接已停止，请查询原任务；后台不会因刷新延长时限。';
-  }
-}
-async function loadHistory() {
-  if (!persistent.value || loadingHistory.value) return;
-  loadingHistory.value = true;
-  sourceGeneration++;
-  source.value = undefined; sourceNotice.value = '';
-  const generation = ++workspaceGeneration;
   try {
-    const list = await api.chatHistory(enterpriseId.value, spaceId.value, chatId.value);
-    if (!mounted || generation !== workspaceGeneration) return;
-    cards.value = [...list].reverse().map(job => {
-      const card: Card = { id: job.id, question: job.question, started: job.createdMs, pending: false };
-      applyJob(card, job); return card;
-    });
-    for (const card of cards.value) if (card.pending) void poll(card, enterpriseId.value, spaceId.value, generation);
-  } catch (error) { if (mounted && generation === workspaceGeneration) notice.value = failure(error); }
-  finally { if (mounted && generation === workspaceGeneration) loadingHistory.value = false; }
+    const answer = await api.crossAnswer(enterpriseId.value, card.question);
+    if (mounted) card.answer = answer;
+  } catch (error) { if (mounted) card.error = failure(error); }
+  finally { if (mounted) card.pending = false; }
 }
-/** 当前选中的是已存在的会话（而不是刚生成的新会话编号）。 */
-const currentChat = computed(() => chats.value.find(item => item.id === chatId.value));
 /** 最近一条带引用的回答：让右侧依据栏在会话进行中就有内容，而不是只留一张插画。 */
-const recentEvidence = computed(() => {
+const recentEvidence = computed<SpaceEvidence[]>(() => {
   for (let index = cards.value.length - 1; index >= 0; index--) {
     const evidence = cards.value[index]?.answer?.evidence;
     if (evidence?.length) return evidence;
@@ -230,81 +99,26 @@ function scrollToLatest() {
 watch(() => cards.value.map(card => `${card.pending}:${card.answer ? 1 : 0}`).join('|'),
   () => { void nextTick(scrollToLatest); });
 
-const confirmDelete = ref(false);
-function newChat() {
-  workspaceGeneration++; sourceGeneration++; chatId.value = crypto.randomUUID(); cards.value = [];
-  source.value = undefined; sourceNotice.value = ''; openChunkId.value = ''; confirmDelete.value = false;
-}
-/** 删除当前会话：二次确认后软删除，列表同步移除并切回空白会话。 */
-async function removeChat() {
-  if (!currentChat.value || active.value || loadingHistory.value) return;
-  const target = chatId.value;
-  loadingHistory.value = true;
-  try {
-    await api.deleteChat(enterpriseId.value, spaceId.value, target);
-    if (!mounted) return;
-    chats.value = chats.value.filter(item => item.id !== target);
-    if (chatId.value === target) newChat();
-    notice.value = '会话已从列表移除。问答任务与反馈仍保留在企业审计记录里。';
-  } catch (error) { if (mounted) notice.value = failure(error); }
-  finally { if (mounted) { loadingHistory.value = false; confirmDelete.value = false; } }
-}
-async function recover(card: Card) {
-  const generation = workspaceGeneration;
-  try {
-    const job = await api.readJob(enterpriseId.value, spaceId.value, card.jobId!);
-    if (mounted && generation === workspaceGeneration) { applyJob(card, job); if (card.pending) void poll(card, enterpriseId.value, spaceId.value, generation); }
-  } catch (error) { if (mounted && generation === workspaceGeneration) card.error = failure(error); }
-}
-async function retryOriginal(card: Card) {
-  if (!ready.value || !card.retryable || card.pending || active.value >= 2 || !card.requestChatId) return;
-  const generation = workspaceGeneration, enterprise = enterpriseId.value, space = spaceId.value;
-  card.pending = true; card.error = undefined;
-  try {
-    let job: WorkspaceJob;
-    try { job = await api.readJob(enterprise, space, card.jobId!); }
-    catch (error) {
-      // 只有明确查无原任务才人工重发；断网/鉴权/服务异常不能证明原提交未成功。
-      if (!(error instanceof EnterpriseError) || error.code !== 404) throw error;
-      if (!mounted || generation !== workspaceGeneration) return;
-      job = await api.submitJob(enterprise, space, card.requestChatId, card.jobId!, card.question);
-    }
-    if (mounted && generation === workspaceGeneration) {
-      if (!chats.value.some(chat => chat.id === job.chatId)) chats.value.unshift({ id: job.chatId, title: card.question.slice(0, 80), createdMs: job.createdMs });
-      applyJob(card, job); if (card.pending) void poll(card, enterprise, space, generation);
-    }
-  } catch (error) {
-    if (mounted && generation === workspaceGeneration) { card.pending = false; card.error = failure(error); }
+/** 在最近的回答里找到某条证据的来源空间：右侧栏与引用按钮共用，不依赖调用方传入卡片。 */
+function findEntry(chunkId: string): SpaceEvidence | undefined {
+  for (let index = cards.value.length - 1; index >= 0; index--) {
+    const entry = cards.value[index]?.answer?.evidence.find(item => item.evidence.chunkId === chunkId);
+    if (entry) return entry;
   }
-}
-async function cancel(card: Card) {
-  const generation = workspaceGeneration;
-  try {
-    const job = await api.cancelJob(enterpriseId.value, spaceId.value, card.jobId!);
-    if (mounted && generation === workspaceGeneration) applyJob(card, job);
-  } catch (error) { if (mounted && generation === workspaceGeneration) card.error = failure(error); }
-}
-async function sendFeedback(card: Card) {
-  if (!card.feedback?.trim() || !card.jobId || card.feedbackSaved) return;
-  card.feedbackId ??= crypto.randomUUID();
-  card.feedbackSnapshot ??= card.feedback;
-  const generation = workspaceGeneration;
-  try {
-    await api.sendFeedback(enterpriseId.value, spaceId.value,
-      { id: card.feedbackId, jobId: card.jobId, chunkId: null, category: 'OTHER', comment: card.feedbackSnapshot });
-    if (mounted && generation === workspaceGeneration) { card.feedbackSaved = true; card.message = '反馈已保存，知识负责人可以查看并处理。'; }
-  } catch (error) { if (mounted && generation === workspaceGeneration) card.error = failure(error); }
+  return undefined;
 }
 async function inspect(evidence: Evidence) {
   // 点已展开的那一条＝收起：不必再到面板顶部找关闭按钮。
   if (openChunkId.value === evidence.chunkId) { collapse(); return; }
+  const entry = findEntry(evidence.chunkId);
+  if (!entry) return;
   const generation = ++sourceGeneration;
   openChunkId.value = evidence.chunkId;
   source.value = undefined;
-  sourceNotice.value = '正在重新核验引用权限与发布状态…';
+  sourceNotice.value = t('正在重新核验引用权限与发布状态…');
   try {
-    const current = await api.evidence(enterpriseId.value, spaceId.value, evidence.chunkId);
-    if (mounted && generation === sourceGeneration) { source.value = current; sourceNotice.value = '已重新核验当前可读的原文片段。'; }
+    const current = await api.crossEvidence(enterpriseId.value, entry.spaceId, evidence.chunkId);
+    if (mounted && generation === sourceGeneration) { source.value = current; sourceNotice.value = t('已重新核验当前可读的原文片段。'); }
   } catch (error) { if (mounted && generation === sourceGeneration) sourceNotice.value = failure(error); }
 }
 /** 收起当前原文核对，回到一览引用的状态。 */
@@ -319,17 +133,17 @@ function collapse() {
  * 只有服务端真的判定超范围才说“不属于学校业务”；本地检索模式下没命中资料属于
  * “校内资料没有覆盖”，不能替用户下范围结论，两种措辞必须分开。
  */
-function redirect(answer: KnowledgeAnswer): string {
+function redirect(answer: CrossAnswer): string {
   // 生产部署里公开联网问答是关闭的，措辞必须指向用户当下真能用的地方，
   // 否则会把人从“答不上来”再送到一个“此功能未开启”的说明页。
-  const outward = publicChatEnabled ? '公开联网问答' : '公开搜索引擎（如必应、百度）';
+  const outward = publicChatEnabled ? t('公开联网问答') : t('公开搜索引擎（如必应、百度）');
   const statuses = answer.parts.map(part => part.status);
   if (statuses.includes('OUT_OF_SCOPE'))
-    return `这个问题不属于当前学校的业务范围，校内资料里不会有答案。可自行使用${outward}查询；那里不携带当前问题、学校原文或会话历史，请勿输入内部信息。`;
+    return t('这个问题不属于当前学校的业务范围，校内资料里不会有答案。可自行使用{outward}查询；那里不携带当前问题、学校原文或会话历史，请勿输入内部信息。', { outward });
   if (statuses.includes('SCOPE_UNKNOWN'))
-    return `暂时判断不了这属于哪一项校内业务，所以没有给出制度结论。可以补上具体的校内对象再问一次；如果本来就是校外的公开信息，请到${outward}。`;
+    return t('暂时判断不了这属于哪一项校内业务，所以没有给出制度结论。可以补上具体的校内对象再问一次；如果本来就是校外的公开信息，请到{outward}。', { outward });
   if (statuses.includes('EVIDENCE_ONLY') || statuses.includes('NO_EVIDENCE'))
-    return `现有校内资料里没有能直接回答这个问题的内容。如果是校外的公开信息（活动、新闻、通用常识），请到${outward}；如果确实是校内事务，可以换个说法再问，或反馈让知识负责人补充资料。`;
+    return t('现有校内资料里没有能直接回答这个问题的内容。如果是校外的公开信息（活动、新闻、通用常识），请到{outward}；如果确实是校内事务，可以换个说法再问，或反馈让知识负责人补充资料。', { outward });
   return '';
 }
 /** 公开联网问答未开启时，直接把用户送到公开搜索引擎，而不是站内的“未开启”说明页。 */
@@ -341,83 +155,58 @@ onMounted(async () => {
     const current = await ensure();
     if (!mounted) return;
     if (current) await connect(current);
-    else notice.value = '请先前往知识空间，使用管理员开通的企业账号登录。';
+    else notice.value = t('请先前往知识空间，使用管理员开通的企业账号登录。');
   }
   catch (error) { if (mounted) notice.value = failure(error); }
   finally { if (mounted) checking.value = false; }
 });
-onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer); api.dispose(); });
+onUnmounted(() => { mounted = false; clearInterval(timer); api.dispose(); });
 </script>
 
 <template>
-  <section class="knowledge-answer" aria-label="企业知识问答">
+  <section class="knowledge-answer" :aria-label="t('企业知识问答')">
     <header class="answer-toolbar">
       <div class="answer-brand">
         <span class="assistant-avatar"><AppIcon name="sparkle" :size="22" /></span>
         <div>
-          <h2>知识助手<span>知序</span></h2>
-          <p>{{ currentEnterprise?.enterpriseName ?? '你的团队知识，随问随用' }}</p>
+          <h2>{{ t('知识助手') }}<span>{{ t('知序') }}</span></h2>
+          <p>{{ currentEnterprise?.enterpriseName ?? t('你的团队知识，随问随用') }}</p>
         </div>
       </div>
       <div class="answer-account">
-        <span v-if="user" class="connection-badge"><i></i>企业身份已连接</span>
+        <span v-if="user" class="connection-badge"><i></i>{{ user.displayName ?? user.username ?? t('企业身份已连接') }}</span>
         <button type="button" @click="user ? emit('manage') : emit('login')">
-          <AppIcon :name="user ? 'book' : 'shield'" :size="15" />{{ user ? '管理知识' : '登录企业账号' }}
+          <AppIcon :name="user ? 'book' : 'shield'" :size="15" />{{ user ? t('管理知识') : t('登录企业账号') }}
         </button>
       </div>
     </header>
-    <p class="answer-notice" role="status" aria-live="polite"><AppIcon name="shield" :size="14" /><span>{{ notice }}</span></p>
+    <p v-if="notice" class="answer-notice" role="status" aria-live="polite"><AppIcon name="shield" :size="14" /><span>{{ notice }}</span></p>
 
     <div v-if="!user && !checking" class="answer-login-state">
       <div class="login-hero">
         <div class="assistant-orb"><AppIcon name="sparkle" :size="38" /></div>
-        <h2>连接团队，打开知识。</h2>
-        <p>登录企业账号后，自动连接所属企业与可访问的资料。</p>
-        <button class="solid" @click="emit('login')">登录并开始<AppIcon name="arrow" :size="16" /></button>
+        <h2>{{ t('连接团队，打开知识。') }}</h2>
+        <p>{{ t('登录企业账号后，自动连接所属企业与可访问的资料。') }}</p>
+        <button class="solid" @click="emit('login')">{{ t('登录并开始') }}<AppIcon name="arrow" :size="16" /></button>
       </div>
       <div class="login-preview">
-        <article><span class="preview-icon sage"><AppIcon name="book" :size="20" /></span><h3>按主题归档</h3><p>制度、流程、经验各自成册，版本与有效期随资料一起留存。</p></article>
-        <article><span class="preview-icon blue"><AppIcon name="search" :size="20" /></span><h3>只回答有依据的部分</h3><p>回答附上原文出处；资料不足时明确说明，而不是编一个给你。</p></article>
-        <article><span class="preview-icon amber"><AppIcon name="shield" :size="20" /></span><h3>权限由企业管理</h3><p>你能看到的空间都是管理员已授权的，不需要记任何编号。</p></article>
+        <article><span class="preview-icon sage"><AppIcon name="book" :size="20" /></span><h3>{{ t('按主题归档') }}</h3><p>{{ t('制度、流程、经验各自成册，版本与有效期随资料一起留存。') }}</p></article>
+        <article><span class="preview-icon blue"><AppIcon name="search" :size="20" /></span><h3>{{ t('只回答有依据的部分') }}</h3><p>{{ t('回答附上原文出处；资料不足时明确说明，而不是编一个给你。') }}</p></article>
+        <article><span class="preview-icon amber"><AppIcon name="shield" :size="20" /></span><h3>{{ t('权限由企业管理') }}</h3><p>{{ t('你能看到的空间都是管理员已授权的，不需要记任何编号。') }}</p></article>
       </div>
     </div>
 
     <template v-if="user && !checking">
-      <div class="answer-controls">
+      <div v-if="(user.enterprises?.length ?? 0) > 1" class="answer-controls">
         <div class="answer-scope">
-          <label v-if="(user.enterprises?.length ?? 0) > 1" for="answer-workspace">
+          <label for="answer-workspace">
             <AppIcon name="briefcase" :size="15" />
-            <select id="answer-workspace" v-model="enterpriseId" :disabled="!!active || listing" @change="list">
-              <option value="" disabled>选择企业工作区</option>
+            <select id="answer-workspace" v-model="enterpriseId" :disabled="!!active">
+              <option value="" disabled>{{ t('选择企业工作区') }}</option>
               <option v-for="item in user.enterprises" :key="item.enterpriseId" :value="item.enterpriseId">{{ item.enterpriseName }}</option>
             </select>
           </label>
-          <label for="answer-space">
-            <AppIcon name="book" :size="15" />
-            <select id="answer-space" v-model="spaceId" :disabled="!!active || listing">
-              <option value="">选择知识空间</option>
-              <option v-for="space in spaces" :key="space.id" :value="space.id">{{ space.name }}</option>
-            </select>
-          </label>
-          <button class="scope-refresh" type="button" :disabled="!!active || listing || !positiveId(enterpriseId)" @click="list" aria-label="刷新授权空间"><AppIcon name="refresh" :size="15" /></button>
         </div>
-        <div v-if="persistent" class="session-tools">
-          <label>私有会话
-            <select v-model="chatId" :disabled="!!active || loadingHistory" @change="workspaceGeneration++; confirmDelete = false; loadHistory()">
-              <option v-if="!chats.some(item => item.id === chatId)" :value="chatId">新会话</option>
-              <option v-for="chat in chats" :key="chat.id" :value="chat.id">{{ chat.title }}</option>
-            </select>
-          </label>
-          <button :disabled="!!active || loadingHistory" @click="newChat"><AppIcon name="plus" :size="14" />新建会话</button>
-          <button :disabled="loadingHistory" @click="loadHistory"><AppIcon name="refresh" :size="14" />查询原会话任务</button>
-          <button v-if="currentChat" class="session-delete" :disabled="!!active || loadingHistory" @click="confirmDelete = true"><AppIcon name="close" :size="14" />删除会话</button>
-        </div>
-        <span class="scope-privacy"><AppIcon name="shield" :size="13" />企业私有资料</span>
-      </div>
-      <div v-if="confirmDelete && currentChat" class="session-confirm" role="alertdialog" aria-label="确认删除会话">
-        <span>将从列表移除「{{ currentChat.title }}」。问答任务与反馈仍保留在企业审计里，不能恢复显示。</span>
-        <button class="danger" :disabled="loadingHistory" @click="removeChat">{{ loadingHistory ? '正在删除…' : '确认删除' }}</button>
-        <button :disabled="loadingHistory" @click="confirmDelete = false">取消</button>
       </div>
       <div class="answer-workbench"><div class="answer-stage">
         <div ref="streamRef" class="answer-stream">
@@ -430,8 +219,8 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
               <i></i><i></i>
             </div>
             <span class="welcome-kicker">YOUR TEAM, CONNECTED</span>
-            <h2>把工作里的问号，<br />交给有依据的回答<span>。</span></h2>
-            <p>{{ currentSpace ? `从「${currentSpace.name}」开始，找制度、理流程、查依据。` : '选择知识空间，让散落的资料成为清晰的下一步。' }}</p>
+            <h2>{{ t('把工作里的问号，') }}<br />{{ t('交给有依据的回答') }}<span>{{ t('。') }}</span></h2>
+            <p>{{ t('已连接全部授权空间，找制度、理流程、查依据。') }}</p>
             <div class="question-starters">
               <button v-for="item in prompts" :key="item.title" :disabled="!ready" @click="question = item.text">
                 <AppIcon :name="item.icon" :size="19" />
@@ -446,7 +235,7 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
             <article v-for="card in cards" :key="card.id" class="answer-card">
               <div class="user-question">
                 <h3>{{ card.question }}</h3>
-                <span class="user-avatar">我</span>
+                <span class="user-avatar">{{ t('我') }}</span>
               </div>
 
               <div class="answer-reply">
@@ -454,20 +243,20 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
                 <div class="answer-reply-body">
                   <div class="answer-head">
                     <div class="assistant-label">
-                      <strong>知序</strong>
-                      <small>{{ card.pending ? '正在处理中' : '本次回答' }}</small>
+                      <strong>{{ t('知序') }}</strong>
+                      <small>{{ card.pending ? t('正在处理中') : t('本次回答') }}</small>
                     </div>
                     <div v-if="card.answer" class="answer-state" :data-status="card.answer.status">
                       <strong>{{ labels[card.answer.status] }}</strong>
-                      <small>{{ card.answer.mode === 'SYNTHETIC_MODEL' ? '虚构资料 · 模型验收' : '本地授权检索' }} · {{ card.answer.elapsedMs }} ms</small>
+                      <small>{{ card.answer.mode === 'SYNTHETIC_MODEL' ? t('虚构资料 · 模型验收') : t('本地授权检索') }} · {{ card.answer.elapsedMs }} ms</small>
                     </div>
                   </div>
 
                   <div v-if="card.pending" class="answer-progress" role="status">
                     <span class="thinking-dots"><i></i><i></i><i></i></span>
                     <div>
-                      <strong>{{ card.status === 'PENDING' ? '问题已受理，等待处理' : '正在检索和核对依据' }}</strong>
-                      <p>{{ Math.max(0, Math.floor((now - card.started) / 1000)) }} 秒 · 最长处理 30 秒，你仍可补充新问题</p>
+                      <strong>{{ t('正在检索和核对依据') }}</strong>
+                      <p>{{ t('{seconds} 秒 · 最长处理 30 秒，你仍可补充新问题', { seconds: Math.max(0, Math.floor((now - card.started) / 1000)) }) }}</p>
                     </div>
                   </div>
 
@@ -487,7 +276,7 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
                         <div class="citation-row">
                           <button v-for="citation in paragraph.citations" :key="citation.sourceId" type="button" class="citation-button" @click="inspect(citation.evidence)">
                             <span class="citation-index">{{ citation.sourceId }}</span>
-                            <span class="citation-body"><strong>{{ citation.evidence.title }}</strong><small>v{{ citation.evidence.versionNo }} · 第{{ citation.evidence.startLine }}—{{ citation.evidence.endLine }}行</small></span>
+                            <span class="citation-body"><strong>{{ citation.evidence.title }}</strong><small>v{{ citation.evidence.versionNo }} · {{ t('第{start}—{end}行', { start: citation.evidence.startLine, end: citation.evidence.endLine }) }}</small></span>
                             <AppIcon name="external" :size="12" />
                           </button>
                         </div>
@@ -499,107 +288,84 @@ onUnmounted(() => { mounted = false; workspaceGeneration++; clearInterval(timer)
 
                     <div v-if="redirect(card.answer)" class="answer-scope-switch">
                       <p>{{ redirect(card.answer) }}</p>
-                      <button v-if="publicChatEnabled" type="button" @click="emit('general')">前往公开联网问答</button>
-                      <button v-else type="button" @click="openPublicSearch">用必应搜一下</button>
+                      <button v-if="publicChatEnabled" type="button" @click="emit('general')">{{ t('前往公开联网问答') }}</button>
+                      <button v-else type="button" @click="openPublicSearch">{{ t('用必应搜一下') }}</button>
                     </div>
 
                     <details v-if="card.answer.evidence.length" class="answer-evidence">
-                      <summary>查看 {{ card.answer.evidence.length }} 条命中原文（命中不等于答案充分）</summary>
-                      <div v-for="item in card.answer.evidence" :key="item.chunkId">
-                        <button type="button" @click="inspect(item)">{{ item.title }} · v{{ item.versionNo }} · 第{{ item.startLine }}—{{ item.endLine }}行 · 重新核验引用</button>
-                        <pre>{{ item.content }}</pre>
+                      <summary>{{ t('查看 {count} 条命中原文（命中不等于答案充分）', { count: card.answer.evidence.length }) }}</summary>
+                      <div v-for="item in card.answer.evidence" :key="item.evidence.chunkId">
+                        <button type="button" @click="inspect(item.evidence)">{{ item.evidence.title }} · {{ item.spaceName }} · v{{ item.evidence.versionNo }} · {{ t('第{start}—{end}行', { start: item.evidence.startLine, end: item.evidence.endLine }) }} · {{ t('重新核验引用') }}</button>
+                        <pre>{{ item.evidence.content }}</pre>
                       </div>
                     </details>
                   </template>
-
-                  <p v-if="card.message && (!card.answer || card.feedbackSaved)" class="answer-caption" role="status">{{ card.message }}</p>
-
-                  <div class="answer-tools">
-                    <details v-if="card.jobId" class="task-details">
-                      <summary><AppIcon name="clock" :size="13" />任务与恢复</summary>
-                      <small>任务编号 {{ card.jobId }}</small>
-                      <div>
-                        <button :disabled="card.pending && card.retryable" @click="recover(card)">查询原任务</button>
-                        <button v-if="card.retryable" :disabled="card.pending || active >= 2" @click="retryOriginal(card)">核对并按原编号重发</button>
-                        <button v-if="card.pending && !card.retryable" @click="cancel(card)">取消此任务</button>
-                      </div>
-                    </details>
-                    <details v-if="card.jobId" class="feedback-inline">
-                      <summary><AppIcon name="info" :size="13" />反馈答案或资料问题</summary>
-                      <label>请说明哪里不准确、缺失或过期<textarea v-model="card.feedback" :disabled="!!card.feedbackId" maxlength="1000" rows="2" /></label>
-                      <small v-if="card.feedbackId && !card.feedbackSaved">正在核对原反馈；再次点击保留原编号与内容，不创建重复记录。</small>
-                      <button :disabled="!card.feedback?.trim() || card.feedbackSaved" @click="sendFeedback(card)">保存反馈</button>
-                    </details>
-                  </div>
                 </div>
               </div>
             </article>
           </div>
         </div>
 
-        <form class="enterprise-composer" aria-label="提交企业问题" @submit.prevent="ask">
-          <label class="composer-label" for="knowledge-question">向团队知识提问</label>
-          <textarea id="knowledge-question" v-model="question" maxlength="1200" rows="2" placeholder="工作里有什么不清楚？试着一次问完整。" :disabled="!ready || listing || loadingHistory" @keydown="questionKeydown"></textarea>
+        <form class="enterprise-composer" :aria-label="t('提交企业问题')" @submit.prevent="ask">
+          <label class="composer-label" for="knowledge-question">{{ t('向团队知识提问') }}</label>
+          <textarea id="knowledge-question" v-model="question" maxlength="1200" rows="2" :placeholder="t('工作里有什么不清楚？试着一次问完整。')" :disabled="!ready" @keydown="questionKeydown"></textarea>
           <div class="answer-compose-footer">
-            <span class="composer-space"><AppIcon name="book" :size="14" />{{ currentSpace?.name ?? '请先选择空间' }}</span>
+            <span class="composer-space"><AppIcon name="book" :size="14" />{{ t('全部知识空间') }}</span>
             <small>{{ question.length }}/1200</small>
-            <button class="solid" type="submit" :disabled="!ready || active >= 2 || !question.trim() || listing || loadingHistory" aria-label="发送问题"><AppIcon name="arrow" :size="18" /><span>发送问题</span></button>
+            <button class="solid" type="submit" :disabled="!ready || active >= 2 || !question.trim()" :aria-label="t('发送问题')"><AppIcon name="arrow" :size="18" /><span>{{ t('发送问题') }}</span></button>
           </div>
         </form>
         <p class="composer-help">
-          <span>{{ active ? `正在处理 ${active} 条问题，最多两条同时处理` : 'Enter 发送 · Shift + Enter 换行' }}</span>
-          <span>{{ persistent ? '历史已接通 · 可查询原会话任务' : '临时对话 · 刷新前请保存结果' }}</span>
+          <span>{{ active ? t('正在处理 {count} 条问题，最多两条同时处理', { count: active }) : t('Enter 发送 · Shift + Enter 换行') }}</span>
+          <span>{{ t('自动检索全部授权空间 · 切页保留，刷新后清空') }}</span>
         </p>
       </div>
       <aside class="answer-sidecar">
-        <div class="source-heading"><AppIcon name="layers" :size="17" /><strong>答案背后的依据</strong><span>可追溯</span></div>
+        <div class="source-heading"><AppIcon name="layers" :size="17" /><strong>{{ t('答案背后的依据') }}</strong><span>{{ t('可追溯') }}</span></div>
 
         <!-- 展开的原文独立在列表上方并可收起：不挡住其它引用，随时能继续核对下一条。 -->
-        <aside v-if="openChunkId" class="source-view" aria-label="当前引用原文">
+        <aside v-if="openChunkId" class="source-view" :aria-label="t('当前引用原文')">
           <header class="source-view-head">
-            <span>原文核对</span>
-            <button type="button" class="source-collapse" @click="collapse">收起</button>
+            <span>{{ t('原文核对') }}</span>
+            <button type="button" class="source-collapse" @click="collapse">{{ t('收起') }}</button>
           </header>
           <p role="status">{{ sourceNotice }}</p>
           <template v-if="source">
             <h3>{{ source.title }} · v{{ source.versionNo }}</h3>
-            <small>第{{ source.startLine }}—{{ source.endLine }}行</small>
+            <small>{{ t('第{start}—{end}行', { start: source.startLine, end: source.endLine }) }}</small>
             <pre>{{ source.content }}</pre>
             <details>
-              <summary>来源定位信息</summary>
-              <small>文档 {{ source.documentId }} / 版本 {{ source.versionId }} / 片段 {{ source.chunkId }} · UTF-16位置 {{ source.startOffset }}—{{ source.endOffset }}</small>
+              <summary>{{ t('来源定位信息') }}</summary>
+              <small>{{ t('文档 {doc} / 版本 {version} / 片段 {chunk} · UTF-16位置 {start}—{end}', { doc: source.documentId, version: source.versionId, chunk: source.chunkId, start: source.startOffset, end: source.endOffset }) }}</small>
             </details>
           </template>
         </aside>
 
         <div v-if="recentEvidence.length" class="source-list">
-          <p class="source-list-hint">本次回答引用的原文；点一条展开核对，再点一次收起。</p>
-          <button v-for="item in recentEvidence" :key="item.chunkId" type="button" class="source-item"
-            :class="{ open: openChunkId === item.chunkId }" :aria-expanded="openChunkId === item.chunkId" @click="inspect(item)">
+          <p class="source-list-hint">{{ t('本次回答引用的原文；点一条展开核对，再点一次收起。') }}</p>
+          <button v-for="item in recentEvidence" :key="item.evidence.chunkId" type="button" class="source-item"
+            :class="{ open: openChunkId === item.evidence.chunkId }" :aria-expanded="openChunkId === item.evidence.chunkId" @click="inspect(item.evidence)">
             <span class="source-item-head">
-              <strong>{{ item.title }}</strong>
-              <small>v{{ item.versionNo }}</small>
+              <strong>{{ item.evidence.title }}</strong>
+              <small>{{ item.spaceName }} · v{{ item.evidence.versionNo }}</small>
             </span>
-            <span class="source-item-line">第{{ item.startLine }}—{{ item.endLine }}行</span>
-            <span class="source-item-snippet">{{ item.content }}</span>
+            <span class="source-item-line">{{ t('第{start}—{end}行', { start: item.evidence.startLine, end: item.evidence.endLine }) }}</span>
+            <span class="source-item-snippet">{{ item.evidence.content }}</span>
           </button>
         </div>
 
         <div v-else-if="!openChunkId" class="source-placeholder">
           <div class="source-art"><AppIcon name="file" :size="34" /><span><AppIcon name="check" :size="13" /></span></div>
-          <h3>每一个结论，<br />都有迹可循。</h3>
-          <p>点击回答中的引用，在这里核对原文、版本和位置。</p>
-          <div class="source-principle"><span>01</span><div><strong>资料有出处</strong><small>保留原文与版本，方便核对</small></div></div>
-          <div class="source-principle"><span>02</span><div><strong>不确定，会告诉你</strong><small>依据不足时，明确保留空白</small></div></div>
+          <h3>{{ t('每一个结论，') }}<br />{{ t('都有迹可循。') }}</h3>
+          <p>{{ t('点击回答中的引用，在这里核对原文、版本和位置。') }}</p>
+          <div class="source-principle"><span>01</span><div><strong>{{ t('资料有出处') }}</strong><small>{{ t('保留原文与版本，方便核对') }}</small></div></div>
+          <div class="source-principle"><span>02</span><div><strong>{{ t('不确定，会告诉你') }}</strong><small>{{ t('依据不足时，明确保留空白') }}</small></div></div>
         </div>
 
         <details class="answer-boundaries">
-          <summary><AppIcon name="shield" :size="14" />隐私与回答边界</summary>
-          <p class="answer-retrieval-note">当前服务端策略：{{ retrievalLabels[retrievalMode] ?? '尚未确认' }}。策略配置不等于依赖健康或索引就绪；历史回答不据此追溯标记。</p>
-          <p v-if="persistent" class="answer-context-note">继续追问请保留同一会话；是否关联历史以每条处理提示为准。无法可靠确定话题时，不会强行继承旧问题。</p>
+          <summary><AppIcon name="shield" :size="14" />{{ t('隐私与回答边界') }}</summary>
+          <p class="answer-retrieval-note">{{ t('每次提问自动检索当前账号全部授权空间；是否调用外部模型以本次回答的模式标记为准，空间原文默认不出企业。') }}</p>
         </details>
-
-        <KnowledgeFeedbackPanel v-if="persistent && ready" :key="`${enterpriseId}:${spaceId}`" :enterprise-id="enterpriseId" :space-id="spaceId" />
       </aside>
     </div>
     </template>
@@ -763,15 +529,6 @@ select {
   cursor: pointer;
 }
 .scope-refresh { padding: 0; width: 32px; height: 32px; border-radius: var(--r-full); flex-shrink: 0; }
-.scope-privacy {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--fs-2xs);
-  color: var(--text-placeholder);
-  flex-shrink: 0;
-}
 
 .session-tools { display: flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; }
 .session-tools label { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-2xs); color: var(--text-placeholder); }
@@ -834,7 +591,7 @@ select {
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--sp-6) 36px var(--sp-4);
+  padding: var(--sp-6) 30px var(--sp-4);
   scroll-behavior: smooth;
   /* 上下渐隐：滚动中被容器边缘切断的行不会显得像是残缺 */
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 18px), transparent 100%);
@@ -1038,8 +795,8 @@ select {
 .answer-state[data-status=OUT_OF_SCOPE] > strong { background: var(--blue-soft); color: var(--blue-600); }
 
 .answer-message {
-  font-size: var(--fs-md);
-  line-height: 1.85;
+  font-size: 16px;
+  line-height: 1.9;
   color: var(--n-800);
   margin: 0 0 18px;
   overflow-wrap: anywhere;
@@ -1051,7 +808,7 @@ select {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--fs-md);
+  font-size: 16px;
   line-height: var(--lh-snug);
   margin-bottom: 10px;
   font-weight: var(--fw-semibold);
@@ -1088,8 +845,8 @@ select {
 .answer-text,
 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .answer-text {
-  font-size: var(--fs-md);
-  line-height: 1.9;
+  font-size: 16px;
+  line-height: 1.95;
   color: var(--n-700);
   text-wrap: pretty;
 }
@@ -1538,7 +1295,6 @@ textarea {
   .connection-badge { display: none; }
   .answer-scope label { max-width: calc(100% - 40px); }
   .answer-scope select { max-width: 100%; }
-  .scope-privacy { display: none; }
   .answer-welcome h2 { font-size: var(--fs-xl); }
   .knowledge-constellation { transform: scale(.86); margin-bottom: -8px; }
   .question-starters { grid-template-columns: 1fr; gap: 6px; }

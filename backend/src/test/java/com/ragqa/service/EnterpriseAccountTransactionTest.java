@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** 真实事务代理+SQL验证首建，使用独立空内存库，不改变业务库。 */
 class EnterpriseAccountTransactionTest {
-    private static final NewEmployeeRequest ADMIN = new NewEmployeeRequest("initial_admin", "Only-in-test#2026");
+    private static final NewEmployeeRequest ADMIN = new NewEmployeeRequest("initial_admin", "Only-in-test#2026", null);
 
     @Test
     void firstAdminIsCreatedOnceWithPasswordHashAndMembership() throws Exception {
@@ -47,7 +47,7 @@ class EnterpriseAccountTransactionTest {
     void invalidOrDuplicateAccountRollsBackEnterpriseWithoutAdoptingHistoricalUsers() throws Exception {
         try (var db = new EnterpriseDatabase()) {
             var accounts = accounts(db);
-            assertThatThrownBy(() -> accounts.bootstrapFirstAdmin("试点企业", new NewEmployeeRequest("admin", "short")))
+            assertThatThrownBy(() -> accounts.bootstrapFirstAdmin("试点企业", new NewEmployeeRequest("admin", "short", null)))
                     .isInstanceOf(BusinessException.class);
             assertThat(db.jdbc.queryForObject("SELECT COUNT(*) FROM sys_enterprise", Integer.class)).isZero();
             db.jdbc.update("INSERT INTO sys_user(username,password_hash) VALUES('initial_admin','旧账号测试占位')");

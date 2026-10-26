@@ -8,7 +8,7 @@ import java.util.List;
 @Mapper
 public interface EnterpriseOrganizationMapper {
     record Department(Long id, String name, int status) { }
-    record Member(Long id, Long userId, String username, Long departmentId, String role,
+    record Member(Long id, Long userId, String username, String displayName, Long departmentId, String role,
             int status, int accountStatus, long permissionVersion) { }
     @Data class NewDepartment { private Long id; private long enterpriseId; private String name; }
 
@@ -33,7 +33,9 @@ public interface EnterpriseOrganizationMapper {
     @Update("UPDATE sys_enterprise SET permission_version=permission_version+1 WHERE id=#{enterprise} AND permission_version=#{version} AND status=0")
     int advanceEnterprise(@Param("enterprise") long enterprise, @Param("version") long version);
 
-    String MEMBER_COLUMNS = "SELECT m.id,m.user_id AS userId,u.username,m.department_id AS departmentId,m.role,m.status,"
+    String MEMBER_COLUMNS = "SELECT m.id,m.user_id AS userId,u.username,"
+            + "COALESCE(NULLIF(TRIM(u.nickname),''),u.username) AS displayName,"
+            + "m.department_id AS departmentId,m.role,m.status,"
             + "CASE WHEN u.deleted=1 THEN 1 ELSE u.status END AS accountStatus,m.permission_version AS permissionVersion FROM sys_enterprise_member m "
             + "JOIN sys_user u ON u.id=m.user_id ";
     @Select("SELECT COUNT(*) FROM sys_enterprise_member m JOIN sys_user u ON u.id=m.user_id WHERE m.enterprise_id=#{enterprise}")

@@ -26,10 +26,10 @@ public record ProductSearchResult(String provider, boolean simulated, String not
     }
 
     /**
-     * 展示摘要；示例价格不是实际售价，平台首页不是可购买的商品详情页。
+     * 展示摘要；示例价格不是实际售价，跳转目的是平台搜索页而不是商品详情页。
      *
      * @param referencePrice 展示参考价，使用定点金额而非浮点数
-     * @param linkType 跳转目的类型；当前Mock仅支持 PLATFORM_HOME
+     * @param linkType 跳转目的类型；当前Mock为 PLATFORM_SEARCH（淘宝搜索页，已带关键词）
      */
     public record Item(String id, String title, String merchant, BigDecimal referencePrice,
                        String currency, String linkType, String jumpUrl) {

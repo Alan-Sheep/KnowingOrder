@@ -1,14 +1,15 @@
 import type { Conversation } from './types';
+import { uuid } from './uuid';
 
 /** 只由用户点击“体验示例”加载，不调用模型，不冒充真实检索结果。 */
 export function createDemo(): Conversation {
   const now = Date.now();
   return {
-    id: crypto.randomUUID(),
+    id: uuid(),
     title: '认识 RAG：从问题到有依据的回答',
     createdAt: now,
     turns: [{
-      id: crypto.randomUUID(),
+      id: uuid(),
       question: 'RAG 是什么？它和直接问大模型有什么区别？资料不够的时候会怎么办？',
       createdAt: now,
       state: 'done',

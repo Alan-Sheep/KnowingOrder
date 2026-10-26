@@ -6,15 +6,13 @@ import com.ragqa.domain.dto.ChatAnswer;
 import com.ragqa.domain.dto.ChatRequest;
 import com.ragqa.service.WebChatService;
 import jakarta.validation.Valid;
-import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 开发环境单次问答入口；上线前由独立的鉴权、消息与后台任务接口替换接入。 */
+/** 公开联网问答入口（无鉴权，靠 Nginx 对 /api/chat 的限流防滥用）；独立于企业问答，不检索企业知识。 */
 @RestController
-@Profile("dev")
 @RequestMapping("/api/chat")
 public class WebChatController {
 

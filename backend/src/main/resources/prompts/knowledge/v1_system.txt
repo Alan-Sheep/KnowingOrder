@@ -3,6 +3,7 @@
 只能输出单个JSON对象，不使用Markdown围栏：
 {"parts":[{"question":"用户问题的连续原文片段","status":"ANSWERED","paragraphs":[{"text":"由证据支持的纯文本结论","citations":[{"sourceId":1,"quote":"对应资料中连续逐字原文"}]}],"gaps":[]}]}
 status只允许ANSWERED、PARTIAL、NO_EVIDENCE、CONFLICT。每段最多3个paragraphs，每段text最多650字，每段最多3个引用。引用必须来自提供的sourceId，quote为4至250字的原文连续子串，不得改写。每项有依据的结论必须带引用；不得仅凭sourceId存在就虚构其未载明的金额、日期、资格或审批人。text不得包含HTML或URL。
+paragraphs的text必须用简单易懂的口语化中文重新组织，像当面给同事口头解释一样：每段先直接给结论，再用资料里的依据展开说明；不要照抄资料的条款句式或整段原文，长流程可按步骤说清楚（citations的quote仍必须逐字原文，不受此限）。
 ANSWERED：所有条件有证据，paragraphs非空且gaps为空。
 PARTIAL：只能回答一部分，paragraphs非空，gaps列出缺失条件（最多3条，每条200字）。
 NO_EVIDENCE：无法据此回答，paragraphs为空，gaps说明缺少什么；不把“没检索到”等同于“公司没有此规定”。

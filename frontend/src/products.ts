@@ -5,7 +5,7 @@ export interface ProductItem {
   merchant: string;
   referencePrice: number;
   currency: 'CNY';
-  linkType: 'PLATFORM_HOME';
+  linkType: 'PLATFORM_HOME' | 'PLATFORM_SEARCH';
   jumpUrl: string;
 }
 
@@ -20,9 +20,37 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** 当前只允许固定演示目的地；接入真实渠道时评审专属白名单，不能开放任意URL。 */
+const HOME_URL = 'https://www.taobao.com/';
+
+/**
+ * 只允许两种固定演示目的地：淘宝首页，或带单个 q 参数的淘宝搜索页。
+ *
+ * 白名单按「协议 + 主机 + 路径 + 查询参数」逐段校验，而不是包含判断或前缀匹配——
+ * 前者能被 `https://s.taobao.com.evil.example/` 绕过，后者能被 `?q=1&redirect=...` 绕过。
+ * 校验不过一律返回 undefined，调用方不渲染成可点链接，也不做兜底跳转。
+ */
 export function productJumpUrl(value: unknown): string | undefined {
-  return value === 'https://www.taobao.com/' ? value : undefined;
+  if (typeof value !== 'string' || value.length > 320) return undefined;
+  let url: URL;
+  try { url = new URL(value); } catch { return undefined; }
+  // 端口、用户名口令、锚点都不该出现在演示链接里，出现即视为被构造过。
+  if (url.protocol !== 'https:' || url.port || url.username || url.password || url.hash) return undefined;
+  if (url.hostname === 'www.taobao.com') {
+    return url.pathname === '/' && !url.search ? HOME_URL : undefined;
+  }
+  if (url.hostname !== 's.taobao.com' || url.pathname !== '/search') return undefined;
+  const keys = [...url.searchParams.keys()];
+  if (keys.length !== 1 || keys[0] !== 'q') return undefined;
+  const query = url.searchParams.get('q') ?? '';
+  if (!query.trim() || query.length > 80) return undefined;
+  return url.toString();
+}
+
+/** 校验通过后，linkType 必须与实际地址一致，避免文案和目的地各说各话。 */
+function linkMatchesType(item: Record<string, unknown>): boolean {
+  const url = productJumpUrl(item.jumpUrl);
+  if (url === undefined) return false;
+  return item.linkType === (url === HOME_URL ? 'PLATFORM_HOME' : 'PLATFORM_SEARCH');
 }
 
 export function validateProducts(value: unknown): value is ProductSearchResult {
@@ -32,8 +60,7 @@ export function validateProducts(value: unknown): value is ProductSearchResult {
     && value.items.every(item => record(item)
       && ['id', 'title', 'merchant'].every(key => typeof item[key] === 'string' && item[key].length > 0)
       && typeof item.referencePrice === 'number' && Number.isFinite(item.referencePrice)
-      && item.referencePrice >= 0 && item.currency === 'CNY'
-      && item.linkType === 'PLATFORM_HOME' && productJumpUrl(item.jumpUrl) !== undefined)
+      && item.referencePrice >= 0 && item.currency === 'CNY' && linkMatchesType(item))
     && new Set(value.items.map(item => item.id)).size === value.items.length;
 }
 

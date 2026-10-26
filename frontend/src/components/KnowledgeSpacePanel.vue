@@ -7,6 +7,7 @@ import KnowledgeDocumentsPanel from './KnowledgeDocumentsPanel.vue';
 import OrganizationPanel from './OrganizationPanel.vue';
 import AccountPasswordPanel from './AccountPasswordPanel.vue';
 import AppIcon from './AppIcon.vue';
+import { t } from '../i18n';
 
 const props = defineProps<{ returnLabel?: string }>();
 const emit = defineEmits<{ authenticated: [] }>();
@@ -21,12 +22,13 @@ const name = ref('');
 const result = ref<KnowledgeSpace>();
 const resultEnterprise = ref('');
 const busy = ref('checking');
-const message = ref('正在核对登录状态…');
+const message = ref(t('正在核对登录状态…'));
 const failed = ref(false);
 const unknownCreation = ref(false);
 const listing = ref<SpacePage>();
 const documentBusy = ref(false);
 const spaceQuery = ref('');
+const managerRef = ref<HTMLElement>();
 const visibleSpaces = computed(() => listing.value?.records.filter(space => space.name.toLocaleLowerCase().includes(spaceQuery.value.trim().toLocaleLowerCase())) ?? []);
 let mounted = true;
 const validEnterprise = computed(() => positiveId(enterpriseId.value));
@@ -35,16 +37,20 @@ const validName = computed(() => name.value.trim().length > 0 && name.value.trim
 
 watch([enterpriseId, spaceId], () => { result.value = undefined; }, { flush: 'sync' });
 watch(enterpriseId, () => { listing.value = undefined; }, { flush: 'sync' });
+// 列表与详情共用父级滚动容器；等 DOM 切换后归零，避免沿用目录底部的位置。
+watch(() => result.value?.id, () => {
+  managerRef.value?.closest<HTMLElement>('.enterprise-workspace')?.scrollTo({ top: 0, behavior: 'instant' });
+}, { flush: 'post' });
 async function run(kind: string, work: () => Promise<void>): Promise<boolean> {
   if (busy.value || documentBusy.value) return false;
   busy.value = kind;
-  message.value = kind === 'login' ? '正在登录…' : kind === 'create' ? '正在创建空间…' : '正在处理…';
+  message.value = kind === 'login' ? t('正在登录…') : kind === 'create' ? t('正在创建空间…') : t('正在处理…');
   failed.value = false;
   try { await work(); return mounted; }
   catch (error) {
     if (!mounted) return false;
     failed.value = true;
-    message.value = error instanceof EnterpriseError ? error.message : '操作未完成，请稍后手动重试。';
+    message.value = error instanceof EnterpriseError ? error.message : t('操作未完成，请稍后手动重试。');
     if (error instanceof EnterpriseError && error.code === 401) { markAnonymous(); result.value = undefined; listing.value = undefined; }
     if (error instanceof EnterpriseError && error.code === 404) listing.value = undefined;
     if (error instanceof EnterpriseError && error.uncertain) unknownCreation.value = true;
@@ -64,11 +70,11 @@ async function login() {
 }
 async function connect(current: Account) {
   enterpriseId.value = current.enterprises?.length === 1 ? current.enterprises[0]!.enterpriseId : '';
-  if (!current.enterprises) { failed.value = true; message.value = '登录信息尚不包含所属企业，请重启最新版后端后刷新。'; return; }
-  if (!current.enterprises.length) { message.value = '账号尚未分配企业，请联系管理员开通成员身份。'; return; }
-  if (!enterpriseId.value) { message.value = '请选择你要进入的企业工作区。'; return; }
+  if (!current.enterprises) { failed.value = true; message.value = t('登录信息尚不包含所属企业，请重启最新版后端后刷新。'); return; }
+  if (!current.enterprises.length) { message.value = t('账号尚未分配企业，请联系管理员开通成员身份。'); return; }
+  if (!enterpriseId.value) { message.value = t('请选择你要进入的企业工作区。'); return; }
   listing.value = await api.listSpaces(enterpriseId.value);
-  message.value = listing.value.total ? '已为你加载可访问的知识空间。' : '暂未获得空间授权，请联系知识负责人。';
+  message.value = listing.value.total ? t('已为你加载可访问的知识空间。') : t('暂未获得空间授权，请联系知识负责人。');
 }
 async function logout() {
   await run('logout', async () => {
@@ -79,7 +85,7 @@ async function logout() {
     enterpriseId.value = '';
     spaceId.value = '';
     name.value = '';
-    message.value = '已退出登录。';
+    message.value = t('已退出登录。');
   });
 }
 async function create() {
@@ -91,7 +97,7 @@ async function create() {
     spaceId.value = created.id;
     resultEnterprise.value = enterprise;
     result.value = created;
-    message.value = '空间已创建，可以开始上传资料。';
+    message.value = t('空间已创建，可以开始上传资料。');
   });
 }
 async function read() {
@@ -102,7 +108,7 @@ async function read() {
     const found = await api.readSpace(enterprise, spaceId.value);
     resultEnterprise.value = enterprise;
     result.value = found;
-    message.value = '已通过服务端归属与授权校验，读取成功。';
+    message.value = t('已通过服务端归属与授权校验，读取成功。');
   });
 }
 async function list(page = 1) {
@@ -110,7 +116,7 @@ async function list(page = 1) {
   await run('list', async () => {
     listing.value = undefined;
     listing.value = await api.listSpaces(enterpriseId.value, page);
-    message.value = listing.value.total ? '已读取当前明确授权范围内的空间。' : '当前没有可访问的知识空间，请联系知识负责人授权。';
+    message.value = listing.value.total ? t('已读取当前明确授权范围内的空间。') : t('当前没有可访问的知识空间，请联系知识负责人授权。');
   });
 }
 function selectSpace(space: KnowledgeSpace) {
@@ -127,11 +133,11 @@ onMounted(async () => {
     const current = await ensure();
     if (!mounted) return;
     if (current) await connect(current);
-    else message.value = '请使用管理员开通的企业账号登录，不开放公开注册。';
+    else message.value = t('请使用管理员开通的企业账号登录，不开放公开注册。');
   } catch (error) {
     if (mounted) {
       failed.value = true;
-      message.value = error instanceof Error ? error.message : '登录状态核对失败。';
+      message.value = error instanceof Error ? error.message : t('登录状态核对失败。');
     }
   } finally { if (mounted) busy.value = ''; }
 });
@@ -139,38 +145,38 @@ onUnmounted(() => { mounted = false; password.value = ''; api.dispose(); });
 </script>
 
 <template>
-  <section class="knowledge-manager" aria-label="企业账号与知识空间">
-    <header v-show="!result" class="library-heading"><div><span class="eyebrow">YOUR TEAM’S KNOWLEDGE</span><h2>把团队的知识，<br />变成触手可及的答案。</h2><p>整理资料、沉淀经验，让好方法被更多人找到。</p><span class="private-badge"><AppIcon name="shield" :size="13" />企业私有 · 按权限可见</span></div><div class="library-art" aria-hidden="true"><span class="library-orbit"></span><span class="folder-back"></span><span class="folder-paper"><i></i><i></i><i></i></span><span class="folder-front"><AppIcon name="book" :size="34" /></span><span class="folder-label"><AppIcon name="check" :size="14" />知识，有序生长</span><i class="folder-spark">+</i></div></header>
-    <div class="account-line" v-if="user"><div class="account-identity"><span class="account-avatar"><AppIcon name="briefcase" :size="19" /></span><div><strong>{{ currentEnterprise?.enterpriseName ?? '企业工作区' }}</strong><small>{{ currentEnterprise?.role === 'ADMIN' ? '企业管理员' : '企业成员' }} · 已登录</small></div><span class="connected-dot">身份已连接</span></div><button type="button" class="quiet-button" :disabled="!!busy || documentBusy" @click="logout">{{ busy === 'logout' ? '正在退出…' : '退出登录' }}</button></div>
-    <form v-else class="account-form" aria-label="企业账号登录" @submit.prevent="login">
-      <div class="login-intro"><span class="login-symbol"><AppIcon name="book" :size="29" /></span><h3>连接你的团队知识</h3><p>登录后查看获授权的空间，管理资料与版本。</p><div class="login-benefits"><span><AppIcon name="check" :size="15" />资料按空间有序归档</span><span><AppIcon name="check" :size="15" />回答与原文相互对应</span><span><AppIcon name="check" :size="15" />访问权限由企业管理</span></div></div>
-      <fieldset :disabled="!!busy"><legend>企业账号登录</legend><p class="login-caption">使用管理员为你开通的账号</p><p v-if="props.returnLabel" class="login-return"><AppIcon name="arrow" :size="14" /><span>登录成功后会回到「{{ props.returnLabel }}」，接着刚才的事继续。</span></p><label for="enterprise-username">账号<input id="enterprise-username" v-model="username" autocomplete="username" placeholder="输入企业账号" required maxlength="64" /></label><label for="enterprise-password">密码<input id="enterprise-password" v-model="password" type="password" autocomplete="current-password" placeholder="输入登录密码" required maxlength="256" /></label><button class="solid" type="submit">{{ busy === 'login' ? '正在登录…' : '登录企业账号' }}<AppIcon name="chevron" :size="15" /></button>
+  <section ref="managerRef" class="knowledge-manager" :aria-label="t('企业账号与知识空间')">
+    <header v-show="!result" class="library-heading"><div><span class="eyebrow">YOUR TEAM’S KNOWLEDGE</span><h2>{{ t('把团队的知识，') }}<br />{{ t('变成触手可及的答案。') }}</h2><p>{{ t('整理资料、沉淀经验，让好方法被更多人找到。') }}</p><span class="private-badge"><AppIcon name="shield" :size="13" />{{ t('企业私有 · 按权限可见') }}</span></div><div class="library-art" aria-hidden="true"><span class="library-orbit"></span><span class="folder-back"></span><span class="folder-paper"><i></i><i></i><i></i></span><span class="folder-front"><AppIcon name="book" :size="34" /></span><span class="folder-label"><AppIcon name="check" :size="14" />{{ t('知识，有序生长') }}</span><i class="folder-spark">+</i></div></header>
+    <div class="account-line" v-if="user"><div class="account-identity"><span class="account-avatar"><AppIcon name="briefcase" :size="19" /></span><div><strong>{{ currentEnterprise?.enterpriseName ?? t('企业工作区') }}</strong><small>{{ currentEnterprise?.role === 'ADMIN' ? t('企业管理员') : t('企业成员') }} · {{ t('已登录') }}</small></div><span class="connected-dot">{{ t('身份已连接') }}</span></div><button type="button" class="quiet-button" :disabled="!!busy || documentBusy" @click="logout">{{ busy === 'logout' ? t('正在退出…') : t('退出登录') }}</button></div>
+    <form v-else class="account-form" :aria-label="t('企业账号登录')" @submit.prevent="login">
+      <div class="login-intro"><span class="login-symbol"><AppIcon name="book" :size="29" /></span><h3>{{ t('连接你的团队知识') }}</h3><p>{{ t('登录后查看获授权的空间，管理资料与版本。') }}</p><div class="login-benefits"><span><AppIcon name="check" :size="15" />{{ t('资料按空间有序归档') }}</span><span><AppIcon name="check" :size="15" />{{ t('回答与原文相互对应') }}</span><span><AppIcon name="check" :size="15" />{{ t('访问权限由企业管理') }}</span></div></div>
+      <fieldset :disabled="!!busy"><legend>{{ t('企业账号登录') }}</legend><p class="login-caption">{{ t('使用管理员为你开通的账号') }}</p><p v-if="props.returnLabel" class="login-return"><AppIcon name="arrow" :size="14" /><span>{{ t('登录成功后会回到「{label}」，接着刚才的事继续。', { label: props.returnLabel ?? '' }) }}</span></p><label for="enterprise-username">{{ t('账号') }}<input id="enterprise-username" v-model="username" autocomplete="username" :placeholder="t('输入企业账号')" required maxlength="64" /></label><label for="enterprise-password">{{ t('密码') }}<input id="enterprise-password" v-model="password" type="password" autocomplete="current-password" :placeholder="t('输入登录密码')" required maxlength="256" /></label><button class="solid" type="submit">{{ busy === 'login' ? t('正在登录…') : t('登录企业账号') }}<AppIcon name="chevron" :size="15" /></button>
         <!-- 未登录时的反馈必须贴在按钮下方：页面底部的提示在常见视口高度下会落到折叠线外，失败原因看不见。 -->
         <p class="manager-feedback form-feedback" :class="{ failed }" role="status" aria-live="polite"><AppIcon :name="failed ? 'info' : 'check'" :size="15" />{{ message }}</p></fieldset>
-      <small>密码只随本次登录提交，不写入本机存储；提交完成后清空输入框。</small>
+      <small>{{ t('密码只随本次登录提交，不写入本机存储；提交完成后清空输入框。') }}</small>
     </form>
     <p v-if="user" class="manager-feedback" :class="{ failed }" role="status" aria-live="polite"><AppIcon :name="failed ? 'info' : 'check'" :size="15" />{{ message }}</p>
     <template v-if="user">
-      <div class="workspace-connection"><label v-if="(user.enterprises?.length ?? 0) > 1" class="enterprise-selector" for="enterprise-workspace"><span><AppIcon name="briefcase" :size="15" />企业工作区</span><select id="enterprise-workspace" v-model="enterpriseId" :disabled="!!busy || documentBusy" @change="list()"><option value="" disabled>选择所属企业</option><option v-for="item in user.enterprises" :key="item.enterpriseId" :value="item.enterpriseId">{{ item.enterpriseName }}</option></select></label><span v-else class="enterprise-name"><AppIcon name="shield" :size="15" />{{ currentEnterprise ? '已自动连接所属企业' : '等待企业身份' }}</span><button type="button" class="quiet-button" :disabled="!!busy || documentBusy || !validEnterprise" @click="list()"><AppIcon name="refresh" :size="15" />{{ busy === 'list' ? '正在刷新…' : '刷新空间列表' }}</button><small>按你的权限展示资料</small></div>
-      <section v-show="!result" class="space-list" aria-label="授权空间列表">
-        <div class="directory-heading"><div><h3>我的知识空间<span v-if="listing" class="count-badge">{{ listing.total }}</span></h3><p>选择一个主题空间，开始整理或查阅资料。</p></div><label class="space-search"><AppIcon name="search" :size="16" /><input v-model="spaceQuery" aria-label="筛选本页知识空间" placeholder="筛选本页空间…" :disabled="!listing" /></label></div>
+      <div class="workspace-connection"><label v-if="(user.enterprises?.length ?? 0) > 1" class="enterprise-selector" for="enterprise-workspace"><span><AppIcon name="briefcase" :size="15" />{{ t('企业工作区') }}</span><select id="enterprise-workspace" v-model="enterpriseId" :disabled="!!busy || documentBusy" @change="list()"><option value="" disabled>{{ t('选择所属企业') }}</option><option v-for="item in user.enterprises" :key="item.enterpriseId" :value="item.enterpriseId">{{ item.enterpriseName }}</option></select></label><span v-else class="enterprise-name"><AppIcon name="shield" :size="15" />{{ currentEnterprise ? t('已自动连接所属企业') : t('等待企业身份') }}</span><button type="button" class="quiet-button" :disabled="!!busy || documentBusy || !validEnterprise" @click="list()"><AppIcon name="refresh" :size="15" />{{ busy === 'list' ? t('正在刷新…') : t('刷新空间列表') }}</button><small>{{ t('按你的权限展示资料') }}</small></div>
+      <section v-show="!result" class="space-list" :aria-label="t('授权空间列表')">
+        <div class="directory-heading"><div><h3>{{ t('我的知识空间') }}<span v-if="listing" class="count-badge">{{ listing.total }}</span></h3><p>{{ t('选择一个主题空间，开始整理或查阅资料。') }}</p></div><label class="space-search"><AppIcon name="search" :size="16" /><input v-model="spaceQuery" :aria-label="t('筛选本页知识空间')" :placeholder="t('筛选本页空间…')" :disabled="!listing" /></label></div>
         <template v-if="listing">
-          <ul class="space-cards"><li v-for="(item, index) in visibleSpaces" :key="item.id"><button type="button" :class="{ chosen: result?.id === item.id }" :disabled="!!busy || documentBusy" @click="selectSpace(item)"><span class="card-top"><span class="space-symbol" :class="'tone-' + index % 3"><AppIcon :name="['book', 'layers', 'briefcase'][index % 3]!" :size="23" /></span><span class="card-tag">{{ result?.id === item.id ? '当前空间' : '知识空间' }}</span></span><strong>{{ item.name }}</strong><span class="card-description">集中管理这一主题的资料、版本与访问权限</span><span class="card-bottom"><small>点开查看资料与版本</small><span>打开空间<AppIcon name="chevron" :size="14" /></span></span></button></li></ul>
-          <div v-if="!visibleSpaces.length" class="directory-empty"><AppIcon :name="spaceQuery ? 'search' : 'book'" :size="32" /><h4>{{ spaceQuery ? '本页没有匹配的空间' : '这里还没有知识空间' }}</h4><p>{{ spaceQuery ? '换一个名称试试，或清空筛选查看本页全部空间。' : '管理员可以在下方创建空间；员工可联系知识负责人获取授权。' }}</p><button v-if="spaceQuery" type="button" @click="spaceQuery = ''">清空筛选</button></div>
-          <div class="directory-pagination"><span>共 {{ listing.total }} 个可访问空间 · 第 {{ listing.pageNum }} 页</span><div><button type="button" :disabled="!!busy || documentBusy || listing.pageNum <= 1" @click="list(listing.pageNum - 1)">上一页</button><button type="button" :disabled="!!busy || documentBusy || listing.pageNum >= listing.pages" @click="list(listing.pageNum + 1)">下一页</button></div></div>
+          <ul class="space-cards"><li v-for="(item, index) in visibleSpaces" :key="item.id"><button type="button" :class="{ chosen: result?.id === item.id }" :disabled="!!busy || documentBusy" @click="selectSpace(item)"><span class="card-top"><span class="space-symbol" :class="'tone-' + index % 3"><AppIcon :name="['book', 'layers', 'briefcase'][index % 3]!" :size="23" /></span><span class="card-tag">{{ result?.id === item.id ? t('当前空间') : t('知识空间') }}</span></span><strong>{{ item.name }}</strong><span class="card-description">{{ t('集中管理这一主题的资料、版本与访问权限') }}</span><span class="card-bottom"><small>{{ t('点开查看资料与版本') }}</small><span>{{ t('打开空间') }}<AppIcon name="chevron" :size="14" /></span></span></button></li></ul>
+          <div v-if="!visibleSpaces.length" class="directory-empty"><AppIcon :name="spaceQuery ? 'search' : 'book'" :size="32" /><h4>{{ spaceQuery ? t('本页没有匹配的空间') : t('这里还没有知识空间') }}</h4><p>{{ spaceQuery ? t('换一个名称试试，或清空筛选查看本页全部空间。') : t('管理员可以在下方创建空间；员工可联系知识负责人获取授权。') }}</p><button v-if="spaceQuery" type="button" @click="spaceQuery = ''">{{ t('清空筛选') }}</button></div>
+          <div class="directory-pagination"><span>{{ t('共 {total} 个可访问空间 · 第 {page} 页', { total: listing.total, page: listing.pageNum }) }}</span><div><button type="button" :disabled="!!busy || documentBusy || listing.pageNum <= 1" @click="list(listing.pageNum - 1)">{{ t('上一页') }}</button><button type="button" :disabled="!!busy || documentBusy || listing.pageNum >= listing.pages" @click="list(listing.pageNum + 1)">{{ t('下一页') }}</button></div></div>
         </template>
-        <div v-else-if="!result" class="directory-empty"><span class="empty-orbit"><AppIcon name="layers" :size="34" /></span><h4>{{ busy ? '正在连接团队知识' : '你的团队知识，从这里汇聚' }}</h4><p>{{ user.enterprises?.length ? '选择企业工作区后，自动展示你有权限访问的空间。' : '登录后会自动带出你有权限访问的空间，不需要记任何编号。' }}</p></div>
+        <div v-else-if="!result" class="directory-empty"><span class="empty-orbit"><AppIcon name="layers" :size="34" /></span><h4>{{ busy ? t('正在连接团队知识') : t('你的团队知识，从这里汇聚') }}</h4><p>{{ user.enterprises?.length ? t('选择企业工作区后，自动展示你有权限访问的空间。') : t('登录后会自动带出你有权限访问的空间，不需要记任何编号。') }}</p></div>
       </section>
       <div v-show="!result" class="manager-grid">
-        <details><summary><span class="utility-icon"><AppIcon name="plus" :size="19" /></span><span><strong>新建知识空间</strong><small>为一个主题建立专属资料库 · 管理员</small></span><AppIcon name="chevron" :size="16" /></summary><form aria-label="创建知识空间" @submit.prevent="create"><fieldset :disabled="!!busy || documentBusy"><legend>创建知识空间</legend><label for="space-name">空间名称<input id="space-name" v-model="name" required maxlength="128" placeholder="例如：研发工作指南" /></label><button class="solid" type="submit" :disabled="!validEnterprise || !validName || unknownCreation">{{ busy === 'create' ? '正在创建…' : '创建空间' }}</button><small>仅有效管理员可创建，创建后获得该空间维护权限。</small></fieldset></form></details>
-        <details class="guide-card"><summary><span class="utility-icon neutral"><AppIcon name="info" :size="19" /></span><span><strong>第一次用？从这里开始</strong><small>三步找到你要的资料</small></span><AppIcon name="chevron" :size="16" /></summary><div class="guide-body"><ol><li><strong>点开上面任意一个空间</strong><p>你能看到的空间，都是管理员已经为你授权的，不需要记任何编号。</p></li><li><strong>在空间里浏览资料</strong><p>每份资料都保留版本和有效期；已过期或已撤下的资料不会出现在回答里。</p></li><li><strong>回到「企业问答」提问</strong><p>用日常说法问就可以。回答会附上原文出处，方便你自己核对。</p></li></ol></div></details>
+        <details><summary><span class="utility-icon"><AppIcon name="plus" :size="19" /></span><span><strong>{{ t('新建知识空间') }}</strong><small>{{ t('为一个主题建立专属资料库 · 管理员') }}</small></span><AppIcon name="chevron" :size="16" /></summary><form :aria-label="t('创建知识空间')" @submit.prevent="create"><fieldset :disabled="!!busy || documentBusy"><legend>{{ t('创建知识空间') }}</legend><label for="space-name">{{ t('空间名称') }}<input id="space-name" v-model="name" required maxlength="128" :placeholder="t('例如：研发工作指南')" /></label><button class="solid" type="submit" :disabled="!validEnterprise || !validName || unknownCreation">{{ busy === 'create' ? t('正在创建…') : t('创建空间') }}</button><small>{{ t('仅有效管理员可创建，创建后获得该空间维护权限。') }}</small></fieldset></form></details>
+        <details class="guide-card"><summary><span class="utility-icon neutral"><AppIcon name="info" :size="19" /></span><span><strong>{{ t('第一次用？从这里开始') }}</strong><small>{{ t('三步找到你要的资料') }}</small></span><AppIcon name="chevron" :size="16" /></summary><div class="guide-body"><ol><li><strong>{{ t('点开上面任意一个空间') }}</strong><p>{{ t('你能看到的空间，都是管理员已经为你授权的，不需要记任何编号。') }}</p></li><li><strong>{{ t('在空间里浏览资料') }}</strong><p>{{ t('每份资料都保留版本和有效期；已过期或已撤下的资料不会出现在回答里。') }}</p></li><li><strong>{{ t('回到「企业问答」提问') }}</strong><p>{{ t('用日常说法问就可以。回答会附上原文出处，方便你自己核对。') }}</p></li></ol></div></details>
       </div>
-      <p v-if="unknownCreation" class="manager-feedback failed">创建结果尚未核对，当前页面已暂停继续创建。请联系管理员核对开发库记录后，再刷新页面操作。</p>
-      <button v-if="result" type="button" class="back-to-spaces" :disabled="!!busy || documentBusy" @click="browseSpaces"><AppIcon name="chevron" :size="14" />返回空间目录</button>
-      <article v-if="result" class="space-result" aria-label="知识空间结果"><span class="selected-space-icon"><AppIcon name="book" :size="26" /></span><div><span class="eyebrow">当前知识空间</span><h3>{{ result.name }}</h3><small>资料按版本留存，回答可以回溯到原文</small></div><span class="private-badge"><AppIcon name="shield" :size="14" />已通过授权校验</span></article>
+      <p v-if="unknownCreation" class="manager-feedback failed">{{ t('创建结果尚未核对，当前页面已暂停继续创建。请联系管理员核对开发库记录后，再刷新页面操作。') }}</p>
+      <button v-if="result" type="button" class="back-to-spaces" :disabled="!!busy || documentBusy" @click="browseSpaces"><AppIcon name="chevron" :size="14" />{{ t('返回空间目录') }}</button>
+      <article v-if="result" class="space-result" :aria-label="t('知识空间结果')"><span class="selected-space-icon"><AppIcon name="book" :size="26" /></span><div><span class="eyebrow">{{ t('当前知识空间') }}</span><h3>{{ result.name }}</h3><small>{{ t('资料按版本留存，回答可以回溯到原文') }}</small></div><span class="private-badge"><AppIcon name="shield" :size="14" />{{ t('已通过授权校验') }}</span></article>
       <KnowledgeDocumentsPanel v-if="result" :key="resultEnterprise + ':' + result.id" :enterprise-id="resultEnterprise" :space="result"
         @updated="result = $event; listing = undefined" @expired="markAnonymous(); result = undefined; listing = undefined" @busy="documentBusy = $event" />
-      <details class="workspace-administration"><summary><AppIcon name="settings" :size="17" /><span>工作区管理<small>账号安全、部门与成员</small></span><AppIcon name="chevron" :size="16" /></summary><AccountPasswordPanel :disabled="!!busy || documentBusy" @busy="documentBusy = $event" @changed="markAnonymous(); result = undefined; listing = undefined; message = '口令已修改，请使用新口令重新登录。'" /><OrganizationPanel v-if="validEnterprise" :key="enterpriseId" :enterprise-id="enterpriseId" :disabled="!!busy || documentBusy" @busy="documentBusy = $event" @expired="markAnonymous(); result = undefined; listing = undefined" /></details>
+      <details class="workspace-administration"><summary><AppIcon name="settings" :size="17" /><span>{{ t('工作区管理') }}<small>{{ t('账号安全、部门与成员') }}</small></span><AppIcon name="chevron" :size="16" /></summary><AccountPasswordPanel :disabled="!!busy || documentBusy" @busy="documentBusy = $event" @changed="markAnonymous(); result = undefined; listing = undefined; message = t('口令已修改，请使用新口令重新登录。')" /><OrganizationPanel v-if="validEnterprise" :key="enterpriseId" :enterprise-id="enterpriseId" :disabled="!!busy || documentBusy" @busy="documentBusy = $event" @expired="markAnonymous(); result = undefined; listing = undefined" /></details>
     </template>
   </section>
 </template>

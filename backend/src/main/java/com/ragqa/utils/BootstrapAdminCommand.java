@@ -21,7 +21,7 @@ public final class BootstrapAdminCommand {
         try (var context = new SpringApplicationBuilder(RagQaApplication.class)
                 .web(WebApplicationType.NONE).run(args)) {
             var created = context.getBean(EnterpriseAccountService.class)
-                    .bootstrapFirstAdmin(enterprise, new NewEmployeeRequest(username, password));
+                    .bootstrapFirstAdmin(enterprise, new NewEmployeeRequest(username, password, null));
             System.out.println("首建完成：企业编号=" + created.enterpriseId() + "，管理员成员编号=" + created.memberId());
         }
     }

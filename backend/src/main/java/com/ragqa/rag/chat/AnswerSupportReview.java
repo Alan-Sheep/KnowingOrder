@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ragqa.domain.dto.KnowledgeAnswers.*;
 import com.ragqa.exception.BusinessException;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -16,6 +18,7 @@ import static com.ragqa.rag.chat.QuestionPlanner.fields;
 import static com.ragqa.rag.chat.QuestionPlanner.require;
 
 /** 逐段复核“引文是否支持结论”；不是另一份知识来源，也不能消除同模型共同误判。 */
+@Slf4j
 public final class AnswerSupportReview {
     private final ChatModel model;
     public AnswerSupportReview(ChatModel model) { this.model = model; }
@@ -33,7 +36,8 @@ public final class AnswerSupportReview {
         Map<String, Object> input = Map.of("question", question, "claims", claims);
         String snapshot = snapshot(input);
         try {
-            TaskDeadline stage = parent.limitedTo(Duration.ofSeconds(5));
+            // 外部模型首字延迟波动大（网关中转常超10秒），5秒硬限会频繁误杀复核；放宽到15秒。
+            TaskDeadline stage = parent.limitedTo(Duration.ofSeconds(15));
             var output = model.call("knowledge-support", Map.of("snapshotId", snapshot, "input", input), 1200, stage);
             FollowUpResolver.active(stage);
             fields(output, "snapshotId", "verdicts");
@@ -59,6 +63,8 @@ public final class AnswerSupportReview {
             FollowUpResolver.active(parent);
             return List.copyOf(result);
         } catch (BusinessException error) {
+            log.warn("{\"event\":\"knowledge_support_review_failed\",\"reason\":\"{}\"}",
+                    error.getMessage() == null ? "unknown" : error.getMessage());
             FollowUpResolver.active(parent);
             return parts.stream().map(part -> part.paragraphs().isEmpty() ? part
                     : fallback(part, "结论依据复核未完成；本次只保留原文，不自动重试。" )).toList();

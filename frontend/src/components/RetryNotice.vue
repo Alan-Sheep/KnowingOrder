@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppIcon from './AppIcon.vue';
+import { t } from '../i18n';
 
 // 区块级失败提示：一块没读出来不该拖垮整页，所以只在这一块里提示，并给一个局部重试入口。
 // 文案由调用方传入（已包含是哪个区块），这里不再重复标题，避免出现两遍区块名。
@@ -11,7 +12,7 @@ const emit = defineEmits<{ retry: [] }>();
   <p class="retry-notice" role="alert">
     <AppIcon name="info" :size="14" />
     <span>{{ message }}</span>
-    <button type="button" :disabled="busy" @click="emit('retry')">{{ label ? `重新加载${label}` : '重试' }}</button>
+    <button type="button" :disabled="busy" @click="emit('retry')">{{ label ? t('重新加载{label}', { label }) : t('重试') }}</button>
   </p>
 </template>
 

@@ -113,6 +113,14 @@ public class EnterpriseAccountServiceImpl implements EnterpriseAccountService {
         SysUser user = new SysUser();
         user.setUsername(request.username());
         user.setPasswordHash(passwords.encode(request.password()));
+        // 真实姓名（可选）：去除首尾空白后为空则不设，全系统以 COALESCE(nickname, username) 作为显示名。
+        String displayName = request.displayName() == null ? "" : request.displayName().strip();
+        if (!displayName.isEmpty()) {
+            if (displayName.length() > 64) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "姓名须不超过64个字符");
+            }
+            user.setNickname(displayName);
+        }
         user.setStatus(0);
         user.setAuthVersion(1L);
         try {

@@ -66,7 +66,10 @@ public class ResponsesClient {
                     .headers(headers -> headers.setBearerAuth(settings.getApiKey()))
                     .httpRequest(request -> BoundedJdkClientHttpRequestFactory
                             .useRemainingBudget(request, deadline::remaining))
-                    .body(Map.of("model", settings.getModel(), "input", List.of(
+                    .body(Map.of("model", settings.getModel(),
+                            // 规则同时写入官方instructions槽位与input首条：部分网关会在instructions缺失时
+                            // 注入自己的默认智能体提示词，双写保证契约不被覆盖，重复内容对模型无害。
+                            "instructions", instructions, "input", List.of(
                             Map.of("role", "system", "content", instructions),
                             Map.of("role", "user", "content", input)),
                             "max_output_tokens", maxOutputTokens, "stream", false, "store", false))

@@ -111,10 +111,16 @@ public interface AffairsApplicationMapper {
             + "WHERE application_id=#{id} AND version=#{version} AND status='REJECTED'")
     long rejectedCount(@Param("id") String id, @Param("version") int version);
 
+    /**
+     * 锁定单条参与行专用：列顺序必须与本记录字段一一对应（MyBatis 对 record 按位置映射），
+     * 不复用 Participant（多 username 列）以免错位；也不联表，避免 FOR UPDATE 锁到成员/用户行。
+     */
+    record ParticipantLock(Long id, Long memberId, Long shareCents, String status, Long confirmedMs, String note) { }
+
     @Select("SELECT id,member_id AS memberId,share_cents AS shareCents,status,confirmed_ms AS confirmedMs,note "
             + "FROM rag_affair_participant WHERE application_id=#{id} AND version=#{version} "
             + "AND member_id=#{member} FOR UPDATE")
-    Participant participantForUpdate(@Param("id") String id, @Param("version") int version,
+    ParticipantLock participantForUpdate(@Param("id") String id, @Param("version") int version,
             @Param("member") long member);
 
     @Update("UPDATE rag_affair_participant SET status=#{status},confirmed_ms=#{ms},note=#{note,jdbcType=VARCHAR} "
@@ -129,7 +135,8 @@ public interface AffairsApplicationMapper {
             + "AND status=0 AND role IN ('EMPLOYEE','ADMIN','FINANCE') LIMIT 1")
     Long memberExists(@Param("enterprise") long enterprise, @Param("member") long member);
 
-    @Select("INSERT INTO rag_affair_quota(enterprise_id,member_id,period,limit_cents,used_cents,reserved_cents,"
+    /** 首次申请时补建额度账本行；已存在则保持不变（返回 0/1/2 都视为成功，调用方不判断行数）。 */
+    @Insert("INSERT INTO rag_affair_quota(enterprise_id,member_id,period,limit_cents,used_cents,reserved_cents,"
             + "revision,updated_ms) VALUES(#{enterprise},#{member},#{period},#{limit,jdbcType=BIGINT},0,0,1,#{ms}) "
             + "ON DUPLICATE KEY UPDATE id=id")
     int insertQuota(@Param("enterprise") long enterprise, @Param("member") long member,
@@ -174,7 +181,10 @@ public interface AffairsApplicationMapper {
             + "WHERE a.enterprise_id=#{enterprise} AND a.id=#{id}")
     Detail detail(@Param("enterprise") long enterprise, @Param("id") String id);
 
-    @Select("SELECT p.id,p.member_id AS memberId,u.username,p.share_cents AS shareCents,p.status,"
+    /** 参与人标签展示中文姓名（昵称），昵称为空才回退登录账号；账号名只用于认证与账号管理。 */
+    String DISPLAY_NAME = "COALESCE(NULLIF(TRIM(u.nickname),''),u.username)";
+
+    @Select("SELECT p.id,p.member_id AS memberId," + DISPLAY_NAME + " AS username,p.share_cents AS shareCents,p.status,"
             + "p.confirmed_ms AS confirmedMs,p.note "
             + "FROM rag_affair_participant p "
             + "JOIN sys_enterprise_member m ON m.id=p.member_id AND m.enterprise_id=#{enterprise} "

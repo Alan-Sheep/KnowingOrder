@@ -39,4 +39,22 @@ public class CurrentUserServiceImpl implements CurrentUserService {
         }
         return user.getId();
     }
+
+    @Override
+    public AccountIdentity identity(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        SysUser user = userMapper.selectOne(Wrappers.<SysUser>lambdaQuery()
+                .select(SysUser::getUsername, SysUser::getNickname)
+                .eq(SysUser::getId, userId)
+                .eq(SysUser::getStatus, Constants.UserStatus.NORMAL));
+        if (user == null || user.getUsername() == null || user.getUsername().isBlank()) {
+            // 与 requireUserId 同口径：不暴露账号是否存在、被禁用或已删除。
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+        String nickname = user.getNickname() == null ? "" : user.getNickname().strip();
+        String displayName = nickname.isEmpty() ? user.getUsername() : nickname;
+        return new AccountIdentity(user.getUsername(), displayName);
+    }
 }
