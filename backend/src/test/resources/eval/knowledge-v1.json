@@ -1,0 +1,124 @@
+{
+  "version": "knowledge-synthetic-v1",
+  "description": "全部为虚构制度。预期回答是人工标注目标，离线入口仅评估授权检索，不把标注当模型实测结果。",
+  "documents": [
+    {"id": 1, "spaceId": 401, "state": "LIVE", "title": "餐补额度", "content": "加班餐补每人每天上限30元。"},
+    {"id": 2, "spaceId": 401, "state": "LIVE", "title": "餐补申请", "content": "申请加班餐补需要直属主管审批，提交加班日期和订单凭证。"},
+    {"id": 3, "spaceId": 401, "state": "LIVE", "title": "入职流程", "content": "入职当天先找人事领取工牌，再向行政申请电脑。"},
+    {"id": 4, "spaceId": 401, "state": "LIVE", "title": "请假流程", "content": "请假需要提前一天在办公系统提交申请，由直属主管审批。"},
+    {"id": 5, "spaceId": 401, "state": "LIVE", "title": "部署流程", "content": "deployment 必须先通过测试，再由值班负责人确认发布。"},
+    {"id": 6, "spaceId": 401, "state": "LIVE", "title": "术语表", "content": "CAB 是变更评审委员会，负责生产变更审批。"},
+    {"id": 7, "spaceId": 401, "state": "LIVE", "title": "报销前置条件", "content": "差旅报销必须先完成出差申请审批，再提交订单凭证。"},
+    {"id": 8, "spaceId": 401, "state": "LIVE", "title": "培训额度甲", "content": "培训补贴每人每次上限200元。"},
+    {"id": 9, "spaceId": 401, "state": "LIVE", "title": "培训额度乙", "content": "培训补贴每人每次上限300元。两份制度未说明优先级。"},
+    {"id": 10, "spaceId": 401, "state": "EXPIRED", "title": "过期停车制度", "content": "停车补贴每天50元。"},
+    {"id": 11, "spaceId": 401, "state": "WITHDRAWN", "title": "撤回住宿制度", "content": "住宿补贴每天500元。"},
+    {"id": 12, "spaceId": 401, "state": "FUTURE", "title": "未生效健身制度", "content": "健身补贴每月100元。"},
+    {"id": 13, "spaceId": 401, "state": "DRAFT", "title": "草稿打车制度", "content": "打车补贴每次80元。"},
+    {"id": 14, "spaceId": 401, "state": "FAILED", "title": "解析失败制度", "content": "洗衣补贴每月60元。"},
+    {"id": 15, "spaceId": 402, "state": "LIVE", "title": "未授权薪资制度", "content": "保密薪资补贴每月999元。"},
+    {"id": 16, "spaceId": 403, "state": "LIVE", "title": "另一企业制度", "content": "异企专享补贴每月888元。"},
+    {"id": 17, "spaceId": 404, "state": "LIVE", "title": "研发部门制度", "content": "研发部门图书补贴每月100元。"},
+    {"id": 18, "spaceId": 401, "state": "SUPERSEDED", "title": "旧餐补制度", "content": "加班餐补每人每天上限90元。"},
+    {"id": 19, "spaceId": 401, "state": "DELETED", "title": "删除租房制度", "content": "租房补贴每月600元。"},
+    {"id": 20, "spaceId": 401, "state": "LIVE", "title": "交通提示", "content": "交通提示：园区班车每晚七点发车。"}
+  ],
+  "cases": [
+    {
+      "id": "K01", "category": "制度问答", "question": "加班餐补每天上限多少？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "加班餐补每天上限多少？", "status": "ANSWERED", "evidenceIds": [1], "mustNotConclude": ["90元"], "gap": ""}]
+    },
+    {
+      "id": "K02", "category": "流程", "question": "申请加班餐补需要谁审批？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "申请加班餐补需要谁审批？", "status": "ANSWERED", "evidenceIds": [2], "mustNotConclude": ["无需审批"], "gap": ""}]
+    },
+    {
+      "id": "K03", "category": "同义表达", "question": "夜里多干活的伙食津贴一天最多能领几块钱？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "夜里多干活的伙食津贴一天最多能领几块钱？", "status": "ANSWERED", "evidenceIds": [1], "mustNotConclude": ["90元"], "gap": ""}]
+    },
+    {
+      "id": "K04", "category": "单问多条件", "question": "加班两小时且没有订单凭证能否申请餐补？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "加班两小时且没有订单凭证能否申请餐补？", "status": "PARTIAL", "evidenceIds": [2], "mustNotConclude": ["加班两小时符合资格", "不需要订单凭证"], "gap": "未说明加班时长资格及无凭证例外。"}]
+    },
+    {
+      "id": "K05", "category": "无标点三问", "question": "加班餐补每天上限多少申请需要谁审批到账时间是多久", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [
+        {"question": "加班餐补每天上限多少", "status": "ANSWERED", "evidenceIds": [1], "mustNotConclude": ["90元"], "gap": ""},
+        {"question": "申请需要谁审批", "status": "ANSWERED", "evidenceIds": [2], "mustNotConclude": ["财务审批即可"], "gap": ""},
+        {"question": "到账时间是多久", "status": "NO_EVIDENCE", "evidenceIds": [], "mustNotConclude": ["次日到账", "随工资到账"], "gap": "制度没有到账时限。"}
+      ]
+    },
+    {
+      "id": "K06", "category": "跨文档", "question": "餐补上限和申请材料是什么？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "餐补上限和申请材料是什么？", "status": "ANSWERED", "evidenceIds": [1, 2], "mustNotConclude": ["90元"], "gap": ""}]
+    },
+    {
+      "id": "K07", "category": "无资料", "question": "宠物保险额度多少？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "宠物保险额度多少？", "status": "NO_EVIDENCE", "evidenceIds": [], "mustNotConclude": ["公司提供宠物保险"], "gap": "没有宠物保险制度。"}]
+    },
+    {
+      "id": "K08", "category": "相关但不足", "question": "交通补贴每天多少钱？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "交通补贴每天多少钱？", "status": "NO_EVIDENCE", "evidenceIds": [], "mustNotConclude": ["班车时间能证明补贴金额"], "gap": "班车提示不能作为交通补贴金额的依据。"}]
+    },
+    {
+      "id": "K09", "category": "冲突", "question": "培训补贴每次上限多少？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "培训补贴每次上限多少？", "status": "CONFLICT", "evidenceIds": [8, 9], "mustNotConclude": ["只以200元为准", "只以300元为准"], "gap": "两份有效制度冲突，缺少适用优先级。"}]
+    },
+    {
+      "id": "K10", "category": "过期", "question": "停车补贴每天多少？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "停车补贴每天多少？", "status": "NO_EVIDENCE", "evidenceIds": [], "mustNotConclude": ["停车补贴每天50元"], "gap": "没有当前有效依据。"}]
+    },
+    {
+      "id": "K11", "category": "撤回", "question": "住宿补贴每天多少？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "住宿补贴每天多少？", "status": "NO_EVIDENCE", "evidenceIds": [], "mustNotConclude": ["住宿补贴每天500元"], "gap": "没有当前有效依据。"}]
+    },
+    {
+      "id": "K12", "category": "未生效", "question": "健身补贴每月多少？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "健身补贴每月多少？", "status": "NO_EVIDENCE", "evidenceIds": [], "mustNotConclude": ["健身补贴每月100元"], "gap": "没有当前有效依据。"}]
+    },
+    {
+      "id": "K13", "category": "草稿", "question": "打车补贴每次多少？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "打车补贴每次多少？", "status": "NO_EVIDENCE", "evidenceIds": [], "mustNotConclude": ["打车补贴每次80元"], "gap": "草稿不能作为回答依据。"}]
+    },
+    {
+      "id": "K14", "category": "解析失败", "question": "洗衣补贴每月多少？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "洗衣补贴每月多少？", "status": "NO_EVIDENCE", "evidenceIds": [], "mustNotConclude": ["洗衣补贴每月60元"], "gap": "解析失败记录不能作为回答依据。"}]
+    },
+    {
+      "id": "K15", "category": "跨空间", "question": "保密薪资补贴多少？", "spaceId": 402, "member": "OWNER", "change": "NONE", "expectedError": 404, "parts": []
+    },
+    {
+      "id": "K16", "category": "跨企业", "question": "异企专享补贴多少？", "spaceId": 403, "member": "OWNER", "change": "NONE", "expectedError": 404, "parts": []
+    },
+    {
+      "id": "K17", "category": "部门授权", "question": "研发部门图书补贴多少？", "spaceId": 404, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "研发部门图书补贴多少？", "status": "ANSWERED", "evidenceIds": [17], "mustNotConclude": ["图书补贴每月1000元"], "gap": ""}]
+    },
+    {
+      "id": "K18", "category": "跨成员", "question": "加班餐补多少？", "spaceId": 401, "member": "PEER", "change": "NONE", "expectedError": 404, "parts": []
+    },
+    {
+      "id": "K19", "category": "撤权", "question": "加班餐补多少？", "spaceId": 401, "member": "OWNER", "change": "REVOKE", "expectedError": 404, "parts": []
+    },
+    {
+      "id": "K20", "category": "版本替换", "question": "加班餐补上限是不是90元？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "加班餐补上限是不是90元？", "status": "ANSWERED", "evidenceIds": [1], "mustNotConclude": ["上限90元"], "gap": ""}]
+    },
+    {
+      "id": "K21", "category": "删除", "question": "租房补贴每月多少？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "租房补贴每月多少？", "status": "NO_EVIDENCE", "evidenceIds": [], "mustNotConclude": ["租房补贴每月600元"], "gap": "没有当前有效依据。"}]
+    },
+    {
+      "id": "K22", "category": "术语", "question": "CAB是什么？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "CAB是什么？", "status": "ANSWERED", "evidenceIds": [6], "mustNotConclude": ["出租车"], "gap": ""}]
+    },
+    {
+      "id": "K23", "category": "中英混合", "question": "deployment上线先做什么？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "deployment上线先做什么？", "status": "ANSWERED", "evidenceIds": [5], "mustNotConclude": ["先发布后测试"], "gap": ""}]
+    },
+    {
+      "id": "K24", "category": "必要前置", "question": "差旅报销之前要先做什么？", "spaceId": 401, "member": "OWNER", "change": "NONE", "expectedError": 0,
+      "parts": [{"question": "差旅报销之前要先做什么？", "status": "ANSWERED", "evidenceIds": [7], "mustNotConclude": ["不用出差申请"], "gap": ""}]
+    }
+  ]
+}

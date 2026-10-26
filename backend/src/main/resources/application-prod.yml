@@ -1,0 +1,36 @@
+# 生产环境：数据源全部取环境变量且不设默认值，缺失时启动即失败，避免误连
+server:
+  servlet:
+    session:
+      cookie:
+        # 默认 true：会话 Cookie 只在 HTTPS 下回传，这是生产基线，不要随手改。
+        # 仅当确无域名、只能用 http://IP:端口 演示时，才在部署环境显式设
+        # SESSION_COOKIE_SECURE=false —— 此时口令与会话 Cookie 均以明文经过公网，
+        # 只允许承载演示/虚构数据，禁止放入任何真实企业资料。
+        secure: ${SESSION_COOKIE_SECURE:true}
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+
+# 生产默认不放开任何来源，由部署时通过环境变量指定，多个域名用逗号分隔
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+
+logging:
+  level:
+    root: INFO
+    com.ragqa: INFO
+  file:
+    # logs/ 已在 .gitignore 中忽略
+    name: logs/rag-qa.log
+  logback:
+    rollingpolicy:
+      # 单文件 100MB 滚动，保留 30 天，总量上限 3GB
+      max-file-size: 100MB
+      max-history: 30
+      total-size-cap: 3GB

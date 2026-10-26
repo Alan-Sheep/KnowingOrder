@@ -1,0 +1,37 @@
+[Unit]
+Description=RAG QA 知识问答服务
+Documentation=file:/opt/rag-qa/DEPLOY.md
+After=network-online.target mysqld.service
+Wants=network-online.target
+Requires=mysqld.service
+
+[Service]
+Type=simple
+User=ragqa
+Group=ragqa
+WorkingDirectory=/opt/rag-qa
+EnvironmentFile=/etc/rag-qa/env
+
+# 4 GiB 机器：堆固定 512m、Metaspace 封顶、SerialGC 省内存。
+# 若后续并发上升，把 UseSerialGC 换成 -XX:+UseG1GC 并适当提高 Xmx。
+ExecStart=/usr/bin/java \
+  -Xms384m -Xmx512m \
+  -XX:MaxMetaspaceSize=192m \
+  -XX:+UseSerialGC \
+  -XX:+HeapDumpOnOutOfMemoryError \
+  -XX:HeapDumpPath=/opt/rag-qa/logs \
+  -jar /opt/rag-qa/app.jar
+
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65535
+
+# 最小化权限面
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/data/knowingorder /opt/rag-qa
+
+[Install]
+WantedBy=multi-user.target

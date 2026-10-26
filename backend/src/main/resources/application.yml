@@ -1,0 +1,139 @@
+# 公共配置：所有环境共享。环境差异项放到 application-{profile}.yml
+server:
+  port: 8080
+  servlet:
+    context-path: /
+    session:
+      timeout: 30m
+      tracking-modes: cookie
+      cookie:
+        http-only: true
+        same-site: lax
+    encoding:
+      charset: UTF-8
+      force: true
+  tomcat:
+    max-http-form-post-size: 4KB
+    # 请求体超限时 Tomcat 最多「吞掉」多少字节再返回响应，默认只有 2MB。
+    # 降低超限后直接断开连接的概率；未读请求体超过此上限时仍可能无法返回 413
+    max-swallow-size: 100MB
+
+spring:
+  application:
+    name: rag-qa
+  profiles:
+    # 默认 dev；生产启动时用 --spring.profiles.active=prod 或环境变量 SPRING_PROFILES_ACTIVE=prod 覆盖
+    active: dev
+  servlet:
+    multipart:
+      # 当前只接收TXT/Markdown，每个原件最多1MiB；整个multipart含元数据最多2MiB。
+      max-file-size: 1MB
+      max-request-size: 2MB
+      # 临时文件遵循本机E盘存储约定；生产部署须指定可写私有临时目录。
+      location: ${KNOWLEDGE_UPLOAD_TEMP:E:/Codex/home/tmp}
+  task:
+    # 异步线程池（@Async）。由 Spring Boot 自动配置，这里只调参数
+    execution:
+      thread-name-prefix: rag-async-
+      pool:
+        core-size: 4
+        max-size: 8
+        # 有界队列：队列满且线程达到 max-size 后拒绝新任务（TaskRejectedException → 503），
+        # 避免无界队列在解析任务堆积时撑爆内存
+        queue-capacity: 100
+        keep-alive: 60s
+      shutdown:
+        # 停机时最多等待 30 秒；超过等待时间的任务不保证完成，业务需另行设计恢复机制
+        await-termination: true
+        await-termination-period: 30s
+    # 定时任务线程池（@Scheduled），如扫描待解析/失败的文档
+    scheduling:
+      thread-name-prefix: rag-sched-
+      pool:
+        # 默认只有 1 个线程，一个任务卡住会阻塞其他所有定时任务
+        size: 2
+      shutdown:
+        await-termination: true
+        await-termination-period: 30s
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: RagQaHikariCP
+      minimum-idle: 2
+      maximum-pool-size: 10
+      # 获取连接最长等待 30s，超时抛异常而不是无限阻塞
+      connection-timeout: 30000
+      # 空闲连接 10 分钟回收；连接最长存活 30 分钟（需小于 MySQL wait_timeout，默认 8 小时）
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+rag:
+  search:
+    endpoint: https://api.tavily.com/search
+    api-key: ${TAVILY_API_KEY:}
+    depth: basic
+    max-results: 5
+    # 连接超时快速发现网络不通，读取超时限制单次搜索的等待时间
+    connect-timeout: 3s
+    read-timeout: 10s
+  llm:
+    # 填写与 API Key 所属地域一致的 OpenAI 兼容地址及已开通的模型名称
+    base-url: ${DASHSCOPE_BASE_URL:}
+    api-key: ${DASHSCOPE_API_KEY:}
+    model: ${LLM_MODEL:}
+    connect-timeout: 3s
+    # 生成通常比搜索耗时更长；实际客户端接入时应用此上限
+    read-timeout: 60s
+
+knowingorder:
+  qdrant:
+    # 本机协议适配器默认关闭；启用也不等于索引构建或正式混合召回已经接通。
+    enabled: ${KNOWLEDGE_QDRANT_ENABLED:false}
+    base-url: ${KNOWLEDGE_QDRANT_BASE_URL:http://127.0.0.1:6333}
+  embedding:
+    # 仅预留本机Ollama协议适配器；关闭时不调用服务、不下载模型，尚未接入正式向量召回。
+    enabled: ${KNOWLEDGE_EMBEDDING_ENABLED:false}
+    base-url: ${KNOWLEDGE_EMBEDDING_BASE_URL:http://127.0.0.1:11434}
+    model: ${KNOWLEDGE_EMBEDDING_MODEL:}
+  knowledge:
+    # 默认不外发。仅允许已获批准的专用虚构资料测试空间，格式为企业编号:空间编号，多个用逗号分隔。
+    # 禁止把真实企业资料上传到获准的虚构测试空间；这不是正式企业数据外发许可。
+    synthetic-model-spaces: ${KNOWLEDGE_SYNTHETIC_MODEL_SPACES:}
+    # 不映射为静态资源；生产环境需配置私有磁盘、目录ACL和备份。
+    storage-root: ${KNOWLEDGE_STORAGE_ROOT:E:/Codex/data/knowingorder/knowledge}
+  security:
+    # 单节点固定一分钟窗口；按直连地址计数，不信任客户端转发头。
+    login-per-address-per-minute: ${LOGIN_PER_ADDRESS_PER_MINUTE:10}
+    login-global-per-minute: ${LOGIN_GLOBAL_PER_MINUTE:120}
+
+mybatis-plus:
+  # 当前使用BaseMapper和授权注解SQL，XML目录为后续扩展预留。
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.ragqa.domain.entity
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+logging:
+  level:
+    # dev父级DEBUG也不能输出私有文档、原件键、请求摘要或空间名称参数。
+    com.ragqa.mapper.KnowledgeDocumentMapper: INFO
+    com.ragqa.mapper.KnowledgeIngestJobMapper: INFO
+    com.ragqa.mapper.EnterpriseOrganizationMapper: INFO
+    com.ragqa.mapper.KnowledgeRetrievalMapper: INFO
+    com.ragqa.mapper.KnowledgeManagementMapper: INFO
+    com.ragqa.mapper.KnowledgeSpaceMapper: INFO
+    com.ragqa.mapper.KnowledgeWorkspaceMapper: INFO
+  charset:
+    console: UTF-8
+    file: UTF-8
+  pattern:
+    # 时间 | 级别 | 进程 | 线程 | 类名 | 消息
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:- } --- [%15.15t] [request_id=%X{request_id:-}] %-40.40logger{39} : %m%n%wEx"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:- } --- [%t] [request_id=%X{request_id:-}] %-40.40logger{39} : %m%n%wEx"

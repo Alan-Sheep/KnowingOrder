@@ -1,0 +1,145 @@
+{
+  "version": "knowledge-rewrite-synthetic-v1",
+  "description": "人工标注的8条同义表达与8条边界反例，仅供离线检查及后续盲测；参考改写不是模型输出，不得计为模型或检索成绩。",
+  "evaluationMode": "ANNOTATION_ONLY",
+  "corpusResource": "/eval/knowledge-v1.json",
+  "corpusSha256": "a953418cde8b982c72f0a8ff22190091c16d03bc7767b4cac91b16217afd8fe5",
+  "cases": [
+    {
+      "id": "R01", "group": "SYNONYM", "risk": "NONE",
+      "question": "夜里多干活的伙食津贴一天最多能领几块钱？",
+      "referenceAlternative": "加班餐补每人每天最多能领取多少？",
+      "preservedAnchors": ["最多"], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [1], "gap": "",
+      "unsafeAlternative": "", "unsafeReason": "", "unsafeContractOutcome": "NOT_APPLICABLE"
+    },
+    {
+      "id": "R02", "group": "SYNONYM", "risk": "NONE",
+      "question": "想领加班吃饭的钱，该让谁签字，要交哪些东西？",
+      "referenceAlternative": "申请加班餐补需要谁审批，提交哪些材料？",
+      "preservedAnchors": [], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [2], "gap": "",
+      "unsafeAlternative": "", "unsafeReason": "", "unsafeContractOutcome": "NOT_APPLICABLE"
+    },
+    {
+      "id": "R03", "group": "SYNONYM", "risk": "NONE",
+      "question": "刚来公司报到，胸前挂的卡和工作用的电脑先去哪里领？",
+      "referenceAlternative": "入职报到领取工牌和申请电脑的先后流程是什么？",
+      "preservedAnchors": [], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [3], "gap": "",
+      "unsafeAlternative": "", "unsafeReason": "", "unsafeContractOutcome": "NOT_APPLICABLE"
+    },
+    {
+      "id": "R04", "group": "SYNONYM", "risk": "NONE",
+      "question": "想休一天，得提前多久在系统里说，谁来点同意？",
+      "referenceAlternative": "请假一天需要提前多久在办公系统提交申请，由谁审批？",
+      "preservedAnchors": ["一天"], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [4], "gap": "",
+      "unsafeAlternative": "", "unsafeReason": "", "unsafeContractOutcome": "NOT_APPLICABLE"
+    },
+    {
+      "id": "R05", "group": "SYNONYM", "risk": "NONE",
+      "question": "deployment往生产环境放之前，先过哪道检查，谁来拍板？",
+      "referenceAlternative": "deployment生产发布前的测试检查和确认负责人是什么？",
+      "preservedAnchors": ["deployment"], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [5], "gap": "",
+      "unsafeAlternative": "", "unsafeReason": "", "unsafeContractOutcome": "NOT_APPLICABLE"
+    },
+    {
+      "id": "R06", "group": "SYNONYM", "risk": "NONE",
+      "question": "CAB这个缩写指哪个组织，管什么事？",
+      "referenceAlternative": "CAB的组织全称及职责是什么？",
+      "preservedAnchors": ["CAB"], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [6], "gap": "",
+      "unsafeAlternative": "", "unsafeReason": "", "unsafeContractOutcome": "NOT_APPLICABLE"
+    },
+    {
+      "id": "R07", "group": "SYNONYM", "risk": "NONE",
+      "question": "出差花的钱想报回来，前面先办啥，后面交啥？",
+      "referenceAlternative": "差旅报销的前置审批流程和提交材料是什么？",
+      "preservedAnchors": [], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [7], "gap": "",
+      "unsafeAlternative": "", "unsafeReason": "", "unsafeContractOutcome": "NOT_APPLICABLE"
+    },
+    {
+      "id": "R08", "group": "SYNONYM", "risk": "NONE",
+      "question": "夜里多干活的伙食津贴一天最多能领几块钱，找谁签字，还要交哪些东西？",
+      "referenceAlternative": "加班餐补每天最多可领取多少，需要谁审批，提交哪些材料？",
+      "preservedAnchors": ["最多"], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [1, 2], "gap": "",
+      "unsafeAlternative": "", "unsafeReason": "", "unsafeContractOutcome": "NOT_APPLICABLE"
+    },
+    {
+      "id": "R09", "group": "BOUNDARY", "risk": "ENTITY",
+      "question": "宠物保险能报销多少？",
+      "referenceAlternative": "宠物保险的报销额度是多少？",
+      "preservedAnchors": ["宠物保险"], "spaceId": 401,
+      "expectedStatus": "NO_EVIDENCE", "expectedEvidenceIds": [], "gap": "语料没有宠物保险制度，不能改成已有餐补制度来制造命中。",
+      "unsafeAlternative": "加班餐补的报销额度是多少？",
+      "unsafeReason": "把宠物保险换成加班餐补，改变业务对象。", "unsafeContractOutcome": "ACCEPTED"
+    },
+    {
+      "id": "R10", "group": "BOUNDARY", "risk": "AMBIGUITY",
+      "question": "这个补贴要找谁批？",
+      "referenceAlternative": "这个补贴要找谁批？",
+      "preservedAnchors": ["这个补贴"], "spaceId": 401,
+      "expectedStatus": "NO_EVIDENCE", "expectedEvidenceIds": [], "gap": "没有上下文，无法确定补贴类型；保留缺口，不能替用户选择制度。",
+      "unsafeAlternative": "申请加班餐补需要谁审批？",
+      "unsafeReason": "凭空认定模糊指代是加班餐补。", "unsafeContractOutcome": "ACCEPTED"
+    },
+    {
+      "id": "R11", "group": "BOUNDARY", "risk": "TIME_LOCATION",
+      "question": "今天北京园区班车几点走？",
+      "referenceAlternative": "今天北京园区班车发车时间？",
+      "preservedAnchors": ["今天", "北京"], "spaceId": 401,
+      "expectedStatus": "PARTIAL", "expectedEvidenceIds": [20], "gap": "班车提示未说明北京园区，也不能证明今天实际发车情况。",
+      "unsafeAlternative": "明天上海园区班车发车时间？",
+      "unsafeReason": "同时替换相对日期和地点，即使词法合法也不等价。", "unsafeContractOutcome": "ACCEPTED"
+    },
+    {
+      "id": "R12", "group": "BOUNDARY", "risk": "CHINESE_QUANTITY",
+      "question": "加班三天能申请餐补吗？",
+      "referenceAlternative": "加班三天是否符合餐补申请条件？",
+      "preservedAnchors": ["三天"], "spaceId": 401,
+      "expectedStatus": "PARTIAL", "expectedEvidenceIds": [2], "gap": "申请说明没有加班天数对应的资格规则。",
+      "unsafeAlternative": "加班五天是否符合餐补申请条件？",
+      "unsafeReason": "中文数量三天变五天，当前阿拉伯数字检查不能发现。", "unsafeContractOutcome": "ACCEPTED"
+    },
+    {
+      "id": "R13", "group": "BOUNDARY", "risk": "NEGATION_DROP",
+      "question": "无订单凭证能申请加班餐补吗？",
+      "referenceAlternative": "无订单凭证是否可以申请加班餐补？",
+      "preservedAnchors": ["无订单凭证"], "spaceId": 401,
+      "expectedStatus": "PARTIAL", "expectedEvidenceIds": [2], "gap": "制度要求提交凭证，没有说明无凭证例外或替代途径。",
+      "unsafeAlternative": "有订单凭证是否可以申请加班餐补？",
+      "unsafeReason": "删除无凭证这一否定条件。", "unsafeContractOutcome": "REJECTED"
+    },
+    {
+      "id": "R14", "group": "BOUNDARY", "risk": "UNIT",
+      "question": "餐补每人每天不超过30元吗？",
+      "referenceAlternative": "加班餐补每人每天不超过30元吗？",
+      "preservedAnchors": ["每人每天", "不超过30元"], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [1], "gap": "",
+      "unsafeAlternative": "加班餐补每人每月不超过30元吗？",
+      "unsafeReason": "数字与约束词没变，但计额周期每天变成每月。", "unsafeContractOutcome": "ACCEPTED"
+    },
+    {
+      "id": "R15", "group": "BOUNDARY", "risk": "NUMBER_BINDING",
+      "question": "加班餐补30元是每人每天吗，培训补贴200元是否就是现行上限？",
+      "referenceAlternative": "加班餐补30元是每人每天吗，培训补贴200元是否就是现行上限？",
+      "preservedAnchors": ["加班餐补30元", "培训补贴200元", "每人每天"], "spaceId": 401,
+      "expectedStatus": "CONFLICT", "expectedEvidenceIds": [1, 8, 9], "gap": "餐补周期有据，培训上限有200元和300元两份有效制度，不能选定其一。",
+      "unsafeAlternative": "加班餐补200元是每人每天吗，培训补贴30元是否就是现行上限？",
+      "unsafeReason": "数字计数相同但交换了金额与业务对象的对应关系。", "unsafeContractOutcome": "ACCEPTED"
+    },
+    {
+      "id": "R16", "group": "BOUNDARY", "risk": "NEGATION_SCOPE",
+      "question": "加班餐补不需要主管审批吗，订单凭证需要提交吗？",
+      "referenceAlternative": "加班餐补不需要主管审批吗，订单凭证需要提交吗？",
+      "preservedAnchors": ["不需要主管审批", "订单凭证需要提交"], "spaceId": 401,
+      "expectedStatus": "ANSWERED", "expectedEvidenceIds": [2], "gap": "",
+      "unsafeAlternative": "加班餐补需要主管审批吗，订单凭证不需要提交吗？",
+      "unsafeReason": "否定词数量相同但否定对象从审批转移到凭证。", "unsafeContractOutcome": "ACCEPTED"
+    }
+  ]
+}
